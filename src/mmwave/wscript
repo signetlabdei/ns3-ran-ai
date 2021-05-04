@@ -55,6 +55,7 @@ def build(bld):
         'model/mmwave-component-carrier-enb.cc',
         'model/mmwave-no-op-component-carrier-manager.cc',
         'model/mmwave-beamforming-model.cc',
+        'model/gemv-propagation-loss-model.cc',
         'model/error-model/mmwave-error-model.cc',
         'model/error-model/mmwave-lte-mi-error-model.cc',
         'model/error-model/mmwave-eesm-cc-t1.cc',
@@ -148,7 +149,8 @@ def build(bld):
         'model/error-model/mmwave-eesm-ir-t2.h',
         'model/error-model/mmwave-eesm-ir.h',
         'model/error-model/mmwave-eesm-t1.h',
-        'model/error-model/mmwave-eesm-t2.h'
+        'model/error-model/mmwave-eesm-t2.h',
+        'model/gemv-propagation-loss-model.h',
         #'model/mmwave-enb-cmac-sap.h',
         #'model/mmwave-enb-rrc.h',
         #'model/mmwave-mac-sap.h',
