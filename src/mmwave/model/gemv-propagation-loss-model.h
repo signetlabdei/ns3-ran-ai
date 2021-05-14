@@ -85,8 +85,27 @@ public:
   virtual double DoCalcRxPower (double txPowerDbm,
                                 Ptr<MobilityModel> a,
                                 Ptr<MobilityModel> b) const;
-private:
+
   /**
+   * Returns a list of distinct IDs associated to RSU/vehicles in the traces
+   *
+   * \param checkRsu true if we search for RSU IDs, false otherwise   
+   * \returns list of distinct RSU/vehicle IDs
+   */
+  std::vector<uint16_t> GetDistinctIds (bool checkRsu);
+
+  /**
+   * Returns the LOS condition of the (a, b) pair
+   *
+   * \param a the mobility model of the source
+   * \param b the mobility model of the destination
+   * \returns 0-invalid; 1-LOS; 2-NLOSb; 3-NLOSv
+   */
+  uint8_t ReadPairLosCondition (Ptr<MobilityModel> a,
+                                Ptr<MobilityModel> b) const;
+
+  private :
+      /**
    * \brief Copy constructor
    *
    * Defined and unimplemented to avoid misuse
@@ -102,19 +121,21 @@ private:
    * Get from numCommPairsPerTimestep_V2I.csv the line intervals associated to a timestep 
    * 
    * \param index the time step index to read from the traces 
+   * \param commType type of communication pair, i.e., V2I or V2V
    * \returns pair of indexes indicating the interval of rows to check in the communication pairs file 
    */
-  std::pair<uint32_t, uint32_t> ReadTimestep (uint32_t index) const;
+  std::pair<uint32_t, uint32_t> ReadTimestep (uint32_t index, std::string commType) const;
   /**
    * Get from commPairs_V2I.csv the line number associated to a specific RSU-UE pair in a specific timestep
    * 
    * \param start the left limit of the search interval
    * \param end the right limit of the search interval
-   * \param targetRSU the ID associated to the RSU
-   * \param targetUe the ID associated to the UE
+   * \param nodeOne the ID associated to the RSU if commType is V2I, to another UE otherwise
+   * \param nodeTwo the ID associated to the UE
+   * \param commType type of communication pair, i.e., V2I or V2V
    * \returns the line to check to get the rx power / pathloss from the GEMV file
    */
-  int32_t ReadCommPairs (uint32_t start, uint32_t end, uint32_t targetRsu, uint32_t targetUe) const;
+  int32_t ReadCommPairs (uint32_t start, uint32_t end, uint16_t nodeOne, uint16_t nodeTwo, std::string commType) const;
   /**
    * Read from largeScalePwr_V2I.csv the pathloss of a specific RSU-UE pair in a specific timestep
    * 
@@ -123,6 +144,15 @@ private:
    * \returns the value of loss, i.e., pathloss or small scale variations
    */
   double ReadRxPower (uint32_t index, std::string fileName) const;
+  /**
+   * Parse the ausiliar traces to find the index corresponding to the line to read   
+   * 
+   * \param nodeOne the ID associated to the RSU if commType is V2I, to another UE otherwise
+   * \param nodeTwo the ID associated to the UE
+   * \param commType type of communication pair, i.e., V2I or V2V
+   * \returns the file index to read
+   */
+  int32_t GetIndex (uint16_t nodeOne, uint16_t nodeTwo, std::string commType) const;
   /**
    * If this model uses objects of type RandomVariableStream,
    * set the stream numbers to the integers starting with the offset

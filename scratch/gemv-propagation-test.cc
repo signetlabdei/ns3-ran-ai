@@ -21,6 +21,7 @@
 #include "ns3/core-module.h"
 #include "ns3/mobility-module.h"
 #include "ns3/gemv-propagation-loss-model.h"
+#include "ns3/gemv-tag.h"
 #include "ns3/log.h"
 #include "ns3/simulator.h"
 #include "ns3/network-module.h"
@@ -30,10 +31,27 @@ using namespace ns3;
 NS_LOG_COMPONENT_DEFINE ("GemvPropagationTest");
 
 void static 
-ReadPower (Ptr<OutputStreamWrapper> stream, Ptr<GemvPropagationLossModel> gemv, double txPowerDbm, Ptr<MobilityModel> mm1, Ptr<MobilityModel> mm2)
+ReadPower (Ptr<OutputStreamWrapper> stream, Ptr<GemvPropagationLossModel> gemv, double txPowerDbm, Ptr<Node> rsu, NodeContainer ues)
 {
-  NS_LOG_UNCOND("Received power at time " << Simulator::Now().GetSeconds() << "s is " << gemv->DoCalcRxPower(0, mm1, mm2) << " dBm");
-  *stream->GetStream () << Simulator::Now ().GetSeconds () << "\t" << gemv->DoCalcRxPower(0, mm1, mm2) << std::endl;
+  *stream->GetStream () << Simulator::Now ().GetSeconds () << "\t" ; 
+  for (uint8_t i = 0; i < ues.GetN(); i++)
+  {
+    *stream->GetStream () << gemv->DoCalcRxPower(txPowerDbm, rsu->GetObject<MobilityModel> (), ues.Get(i)->GetObject<MobilityModel> ()) << "\t";
+  }
+  *stream->GetStream () << std::endl;
+}
+
+void static 
+ReadLosCondition (Ptr<OutputStreamWrapper> stream, Ptr<GemvPropagationLossModel> gemv, Ptr<Node> rsu, NodeContainer ues)
+{
+  *stream->GetStream () << Simulator::Now ().GetSeconds () << "\t";
+  for (uint8_t i = 0; i < ues.GetN (); i++)
+    {
+      *stream->GetStream () << uint32_t( gemv->ReadPairLosCondition (rsu->GetObject<MobilityModel> (),
+                                                    ues.Get (i)->GetObject<MobilityModel> ()) )
+                            << "\t";
+    }
+  *stream->GetStream () << std::endl;
 }
 
 int
@@ -45,15 +63,45 @@ main (int argc, char *argv[])
   Config::SetDefault ("ns3::GemvPropagationLossModel::InputPath", StringValue("/home/dragomat/Documents/ns3-mmwave-pqos/input/"));
   
   Ptr<GemvPropagationLossModel> gemv = CreateObject<GemvPropagationLossModel> ();
-  
-  Ptr<ConstantPositionMobilityModel> mm = CreateObject<ConstantPositionMobilityModel>();
+
+  NodeContainer nodes;
+  nodes.Create (1);
+
+  std::vector<uint16_t> rsuList = gemv->GetDistinctIds(true);
+  std::vector<uint16_t> ueList = gemv->GetDistinctIds(false);
+
+  Ptr<GemvTag> tagRsu = CreateObject<GemvTag>();
+  tagRsu->SetTagId(3);
+  tagRsu->SetNodeType(true);
+  Ptr<Object> object = nodes.Get(0);
+  object->AggregateObject (tagRsu);
+
+  NodeContainer ueNodes;
+  ueNodes.Create (ueList.size());
+
+  for (uint16_t i = 0; i < ueList.size(); i++)
+  {
+    Ptr<GemvTag> tagUe = CreateObject<GemvTag>();
+    tagUe->SetTagId(ueList.at(i));
+    tagUe->SetNodeType(false);
+    object = ueNodes.Get(i);
+    object->AggregateObject (tagUe);
+  }
+
+  // Install Mobility Model
+  MobilityHelper mobility;
+  mobility.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
+  mobility.Install (nodes);
+  mobility.Install (ueNodes);
 
   AsciiTraceHelper asciiTraceHelper;
-  Ptr<OutputStreamWrapper> stream = asciiTraceHelper.CreateFileStream ("powerTest-3-12.txt");
+  Ptr<OutputStreamWrapper> stream_1 = asciiTraceHelper.CreateFileStream ("powerTest-3.txt");
+  Ptr<OutputStreamWrapper> stream_2 = asciiTraceHelper.CreateFileStream ("losCondition-3.txt");
 
   for (uint8_t i = 0; i < 25; i++)
   {
-    Simulator::Schedule(Seconds(i), &ReadPower, stream, gemv, 0, mm, mm);
+    Simulator::Schedule (Seconds (i), &ReadPower, stream_1, gemv, 0, nodes.Get (0), ueNodes);
+    Simulator::Schedule (Seconds (i), &ReadLosCondition, stream_2, gemv, nodes.Get (0), ueNodes);
   } 
 
   Simulator::Run();

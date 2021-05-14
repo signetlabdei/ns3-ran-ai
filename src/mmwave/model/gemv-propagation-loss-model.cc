@@ -17,6 +17,7 @@
  *
  */
 
+#include "algorithm"    
 #include "ns3/log.h"
 #include "ns3/object.h"
 #include "ns3/double.h"
@@ -26,6 +27,9 @@
 #include "ns3/csv-reader.h"
 #include "ns3/nstime.h"
 #include "ns3/boolean.h"
+#include "ns3/node.h"
+#include "ns3/gemv-tag.h"
+#include "ns3/mobility-module.h"
 
 namespace ns3 {
 
@@ -69,15 +73,49 @@ GemvPropagationLossModel::~GemvPropagationLossModel ()
   NS_LOG_FUNCTION (this);
 }
 
+std::vector<uint16_t>
+GemvPropagationLossModel::GetDistinctIds (bool checkRsu)
+{
+  std::string fileName {m_path+"commPairs_V2I.csv"};
+  CsvReader csv (fileName, ',');
+  uint16_t rsu {};
+  uint16_t ue {};
+
+  std::vector<uint16_t> distinctId;
+  while (csv.FetchNextRow ())
+    {
+      // Ignore blank lines
+      if (csv.IsBlankRow ())
+        continue;
+      
+      // Expecting two values
+      bool ok = csv.GetValue (0, rsu);
+      ok |= csv.GetValue (1, ue);
+      NS_ABORT_MSG_IF (!ok, "Something went wrong while parsing the file: " << fileName);
+
+      if (checkRsu)
+        distinctId.push_back(rsu);
+      else
+        distinctId.push_back(ue);
+
+    } // while FetchNextRow
+  
+  // eliminate duplicate ids from the list
+  sort(distinctId.begin(), distinctId.end());
+  distinctId.erase( unique( distinctId.begin(), distinctId.end() ), distinctId.end() );
+
+  return distinctId;
+}
+
 std::pair<uint32_t, uint32_t>
-GemvPropagationLossModel::ReadTimestep (uint32_t index) const
+GemvPropagationLossModel::ReadTimestep (uint32_t index, std::string commType) const
 {
   uint32_t shift = 1; // CsvReader count rows starting from 1
   uint32_t numCommPairs = 0;
 
-  std::string fileName {m_path+"numCommPairsPerTimestep_V2I.csv"};
+  std::string fileName{m_path + "numCommPairsPerTimestep_" + commType + ".csv"};
   CsvReader csv (fileName, '\n');
-  std::string varValue;
+  std::string varValue {};
 
   while (csv.FetchNextRow ())
     {
@@ -104,12 +142,12 @@ GemvPropagationLossModel::ReadTimestep (uint32_t index) const
 }
 
 int32_t
-GemvPropagationLossModel::ReadCommPairs (uint32_t start, uint32_t end, uint32_t targetRsu, uint32_t targetUe) const
+GemvPropagationLossModel::ReadCommPairs (uint32_t start, uint32_t end, uint16_t nodeOne, uint16_t nodeTwo, std::string commType) const
 {
-  std::string fileName {m_path+"commPairs_V2I.csv"};
+  std::string fileName{m_path + "commPairs_" + commType + ".csv"};
   CsvReader csv (fileName, ',');
-  uint32_t rsu;
-  uint32_t ue;
+  uint16_t readOne {};
+  uint16_t readTwo {};
 
   while (csv.FetchNextRow ())
     {
@@ -124,17 +162,32 @@ GemvPropagationLossModel::ReadCommPairs (uint32_t start, uint32_t end, uint32_t 
         break;
       
       // Expecting two values
-      bool ok = csv.GetValue (0, rsu);
-      ok |= csv.GetValue (1, ue);
+      bool ok = csv.GetValue (0, readOne);
+      ok |= csv.GetValue (1, readTwo);
       NS_ABORT_MSG_IF (!ok, "Something went wrong while parsing the file: " << fileName);
 
-      NS_LOG_DEBUG ("targetRsu " << targetRsu << " targetUe " << targetUe << "rsu " << rsu << " ue " << ue );
-
-      if (targetRsu == rsu and targetUe == ue)
+      if (nodeOne == readOne && nodeTwo == readTwo)
         return csv.RowNumber();
 
     } // while FetchNextRow
   return -1;
+}
+
+int32_t
+GemvPropagationLossModel::GetIndex (uint16_t nodeOne, uint16_t nodeTwo, std::string commType) const
+{
+  // The following snippet of code works both for V2I and V2V.
+  // In case of V2I pair, nodeOne will always correspond to the RSU/eNB
+
+  // Row number to check (CsvReader counts rows starting from 1, while timestep takes values in [0,inf])
+  
+  uint32_t timestep = std::floor ((Simulator::Now () / m_timeResolution).GetDouble ()) + 1;
+  
+  std::pair<uint32_t, uint32_t> interval = ReadTimestep (timestep, commType);
+  
+  int32_t index = ReadCommPairs (interval.first, interval.second, nodeOne, nodeTwo, commType);
+
+  return index;
 }
 
 double
@@ -142,7 +195,7 @@ GemvPropagationLossModel::ReadRxPower (uint32_t index, std::string fileName) con
 {
   CsvReader csv (fileName, ',');
   
-  double pwr;
+  double pwr {};
 
   while (csv.FetchNextRow ())
     {
@@ -161,6 +214,72 @@ GemvPropagationLossModel::ReadRxPower (uint32_t index, std::string fileName) con
   return -1;
 }
 
+uint8_t
+GemvPropagationLossModel::ReadPairLosCondition (Ptr<MobilityModel> a,
+                                                Ptr<MobilityModel> b) const
+{
+  // extract tag ID from the nodes and check their type before
+  // reading the received power from the GEMV traces
+
+  Ptr<GemvTag> tagA = a->GetObject<Node> ()->GetObject<GemvTag> ();
+  Ptr<GemvTag> tagB = b->GetObject<Node> ()->GetObject<GemvTag> ();
+
+  uint16_t nodeOne{};
+  uint16_t nodeTwo{};
+  std::string commType{};
+
+  NS_ABORT_MSG_IF (tagA->IsNodeRsu () && tagB->IsNodeRsu (),
+                   "Communication between RSU is not supported.");
+
+  if (!tagA->IsNodeRsu () && !tagB->IsNodeRsu ())
+    {
+      NS_LOG_DEBUG ("Both nodes are vehicles.");
+      commType = "V2V";
+      nodeOne = tagA->GetTagId ();
+      nodeTwo = tagB->GetTagId ();
+    }
+  else
+    {
+      NS_LOG_DEBUG ("One of the two nodes is an RSU.");
+      commType = "V2I";
+      if (tagA->IsNodeRsu ())
+        {
+          nodeOne = tagA->GetTagId ();
+          nodeTwo = tagB->GetTagId ();
+        }
+      else
+        {
+          nodeTwo = tagA->GetTagId ();
+          nodeOne = tagB->GetTagId ();
+        }
+    }
+
+  int32_t index = GetIndex (nodeOne, nodeTwo, commType);
+
+  if (index != -1)
+  {
+    CsvReader csv (m_path+"commPairType_" + commType + ".csv", ',');
+
+    uint8_t losCondition {};
+
+    while (csv.FetchNextRow ())
+      {
+        // Ignore blank lines
+        if (csv.IsBlankRow ())
+          continue;
+
+        if (csv.RowNumber () == (uint32_t)index)
+          {
+            // Expecting one values
+            bool ok = csv.GetValue (0, losCondition);
+            NS_ABORT_MSG_IF (!ok, "Something went wrong while parsing the file");
+            return losCondition;
+          }
+      } // while FetchNextRow
+  } 
+  return 0; // corresponding to an invalid LOS condition (this pair is not in the traces)
+}
+
 double
 GemvPropagationLossModel::DoCalcRxPower (double txPowerDbm,
                                              Ptr<MobilityModel> a,
@@ -168,32 +287,63 @@ GemvPropagationLossModel::DoCalcRxPower (double txPowerDbm,
 {
   NS_LOG_FUNCTION (this << Simulator::Now());
   
-  // TODO: get RSU and UE IDs from nodes associated to the mobility models
-  uint32_t rsu = 3;
-  uint32_t ue = 13;
-  uint32_t timestep = std::floor( (Simulator::Now() / m_timeResolution).GetDouble()) + 1; // row number to check (CsvReader counts rows starting from 1, while timestep takes values in [0,inf])
+  // extract tag ID from the nodes and check their type before
+  // reading the received power from the GEMV traces
+  
+  Ptr<GemvTag> tagA = a->GetObject<Node> ()->GetObject<GemvTag> ();
+  Ptr<GemvTag> tagB = b->GetObject<Node> ()->GetObject<GemvTag> ();
 
-  std::pair<uint32_t, uint32_t> interval = ReadTimestep(timestep);
+  uint16_t nodeOne {}; // in case of V2I link, this is the RSU
+  uint16_t nodeTwo {}; // in case of V2I link, this is the vehicle
+  std::string commType {};
+  
+  NS_ABORT_MSG_IF (tagA->IsNodeRsu () && tagB->IsNodeRsu (), "Communication between RSU is not supported.");
 
-  int32_t index = ReadCommPairs(interval.first, interval.second, rsu, ue);
+  if (!tagA->IsNodeRsu() && !tagB->IsNodeRsu())
+  {
+    NS_LOG_DEBUG("Both nodes are vehicles.");
+    commType = "V2V";
+    nodeOne = tagA->GetTagId ();
+    nodeTwo = tagB->GetTagId ();
+  }
+  else
+  {
+    NS_LOG_DEBUG ("One of the two nodes is an RSU.");
+    commType = "V2I";
+    if (tagA->IsNodeRsu())
+    {
+      nodeOne = tagA->GetTagId();
+      nodeTwo = tagB->GetTagId();
+    }
+    else
+    {
+      nodeTwo = tagA->GetTagId();
+      nodeOne = tagB->GetTagId(); 
+    }
+  }
 
-  double gain = 0;
+  int32_t index = GetIndex (nodeOne, nodeTwo, commType);
 
+  double gain {};
+
+  // In case the index is -1, there is not a correspondence for (nodeOne, nodeTwo) in the traces.
+  // As a consequence, we return a -inf gain, representing the nodes not communicating.
   if (index != -1)
   {
-    std::string fileName {m_path+"largeScalePwr_V2I.csv"};
+    std::string fileName{m_path + "largeScalePwr_" + commType + ".csv"};
     gain += ReadRxPower (index, fileName); // get pathloss
+    
     if (m_smallScaleEnabled)
     {
-    fileName = m_path+"smallScaleVar_V2I.csv";
+      fileName = m_path + "smallScaleVar_" + commType + ".csv";
       gain += ReadRxPower (index, fileName); // get small scale variations
     }
+
     NS_LOG_DEBUG("Gain:" << gain << " dBm");
   }
   else
   {
-    gain = std::numeric_limits<double>::infinity();
-    NS_LOG_DEBUG("UE " << ue << " is not in the communication range of RSU " << rsu);
+    gain = -std::numeric_limits<double>::infinity();
   }
 
   return txPowerDbm + gain;
