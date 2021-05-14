@@ -207,7 +207,23 @@ GemvPropagationLossModel::ReadRxPower (uint32_t index, std::string fileName) con
       {
         // Expecting one values
         bool ok = csv.GetValue (0, pwr); 
-        NS_ABORT_MSG_IF (!ok, "Something went wrong while parsing the file: " << fileName);
+        if (!ok)
+        {
+          // maybe it is an Inf value
+          std::string sValue {};
+          csv.GetValue (0, sValue);
+          if (sValue == "Inf")
+          {
+            pwr = -std::numeric_limits<double>::infinity();
+            ok = true;
+          }
+          else
+          {
+            ok = false;
+          }
+          NS_ABORT_MSG_IF (!ok, "Something went wrong while parsing the file: " << fileName
+          << " at line " << +index);
+        }
         return pwr;
       }
     } // while FetchNextRow
