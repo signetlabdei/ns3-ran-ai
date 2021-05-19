@@ -30,12 +30,31 @@ using namespace ns3;
 
 NS_LOG_COMPONENT_DEFINE ("GemvPropagationTest");
 
+void static
+PrintHeader (Ptr<OutputStreamWrapper> stream, NodeContainer ues)
+{
+  *stream->GetStream () << "Time\t";
+  for (uint16_t i = 0; i < ues.GetN(); i++)
+  {
+    *stream->GetStream () << "node-" << +i << "\t";
+  }
+  *stream->GetStream () << std::endl;
+}
+
 void static 
 ReadPower (Ptr<OutputStreamWrapper> stream, Ptr<GemvPropagationLossModel> gemv, double txPowerDbm, Ptr<Node> rsu, NodeContainer ues)
 {
-  *stream->GetStream () << Simulator::Now ().GetSeconds () << "\t" ; 
-  for (uint8_t i = 0; i < ues.GetN(); i++)
+  if (Simulator::Now ().IsZero ())
   {
+    PrintHeader (stream, ues);
+  }
+  
+  // print the rx power
+  *stream->GetStream () << Simulator::Now ().GetSeconds () << "\t" ; 
+  for (uint16_t i = 0; i < ues.GetN(); i++)
+  {
+    NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () << " node " << +i << 
+                  " gain " <<  gemv->DoCalcRxPower(txPowerDbm, rsu->GetObject<MobilityModel> (), ues.Get(i)->GetObject<MobilityModel> ()));
     *stream->GetStream () << gemv->DoCalcRxPower(txPowerDbm, rsu->GetObject<MobilityModel> (), ues.Get(i)->GetObject<MobilityModel> ()) << "\t";
   }
   *stream->GetStream () << std::endl;
@@ -44,12 +63,19 @@ ReadPower (Ptr<OutputStreamWrapper> stream, Ptr<GemvPropagationLossModel> gemv, 
 void static 
 ReadLosCondition (Ptr<OutputStreamWrapper> stream, Ptr<GemvPropagationLossModel> gemv, Ptr<Node> rsu, NodeContainer ues)
 {
+  // print the header
+  if (Simulator::Now ().IsZero ())
+  {
+    PrintHeader (stream, ues);
+  }
+  
+  // print the los condition
   *stream->GetStream () << Simulator::Now ().GetSeconds () << "\t";
   for (uint8_t i = 0; i < ues.GetN (); i++)
     {
-      *stream->GetStream () << uint32_t( gemv->ReadPairLosCondition (rsu->GetObject<MobilityModel> (),
-                                                    ues.Get (i)->GetObject<MobilityModel> ()) )
-                            << "\t";
+      NS_LOG_DEBUG ("Time " << Simulator::Now ().GetSeconds () << " node " << +i << 
+                    " los condition " <<  +gemv->ReadPairLosCondition (rsu->GetObject<MobilityModel> (), ues.Get (i)->GetObject<MobilityModel> ()));
+      *stream->GetStream () << +gemv->ReadPairLosCondition (rsu->GetObject<MobilityModel> (), ues.Get (i)->GetObject<MobilityModel> ()) << "\t";
     }
   *stream->GetStream () << std::endl;
 }
@@ -59,52 +85,69 @@ main (int argc, char *argv[])
 {
   CommandLine cmd;
   cmd.Parse (argc, argv);
-
-  Config::SetDefault ("ns3::GemvPropagationLossModel::InputPath", StringValue("/home/dragomat/Documents/ns3-mmwave-pqos/input/"));
   
   Ptr<GemvPropagationLossModel> gemv = CreateObject<GemvPropagationLossModel> ();
-
-  NodeContainer nodes;
-  nodes.Create (1);
+  gemv->SetPath ("/home/tommaso/workspace/huawei-pqos/GEMV2PackageV1.2/outputSim/bolognaLeftHalfRSU3_50vehicles_100sec/13-May-2021_");
+  Time timeRes = MilliSeconds (100);
+  gemv->SetTimeResolution (timeRes);
+  Time simTime = gemv->GetMaxSimulationTime ();
+  NS_LOG_UNCOND ("Simulation time: " << simTime.GetSeconds () << " s");
+  gemv->SetAttribute ("IncludeSmallScale", BooleanValue (false));
 
   std::vector<uint16_t> rsuList = gemv->GetDistinctIds(true);
   std::vector<uint16_t> ueList = gemv->GetDistinctIds(false);
-
-  Ptr<GemvTag> tagRsu = CreateObject<GemvTag>();
-  tagRsu->SetTagId(3);
-  tagRsu->SetNodeType(true);
-  Ptr<Object> object = nodes.Get(0);
-  object->AggregateObject (tagRsu);
-
+  
+  NodeContainer rsuNodes;  
   NodeContainer ueNodes;
-  ueNodes.Create (ueList.size());
-
-  for (uint16_t i = 0; i < ueList.size(); i++)
+  
+  for (const auto& i : rsuList)
   {
-    Ptr<GemvTag> tagUe = CreateObject<GemvTag>();
-    tagUe->SetTagId(ueList.at(i));
-    tagUe->SetNodeType(false);
-    object = ueNodes.Get(i);
-    object->AggregateObject (tagUe);
+    // create the RSU node and add it to the container
+    Ptr<Node> n = CreateObject<Node> ();
+    rsuNodes.Add (n);
+    
+    // create the gemv tag and aggregate it to the node
+    Ptr<GemvTag> tag = CreateObject<GemvTag>();
+    tag->SetTagId(i);
+    tag->SetNodeType(true);
+    n->AggregateObject (tag);
   }
+  NS_LOG_UNCOND ("Number of RSU nodes: " << rsuNodes.GetN ());
+  NS_ABORT_MSG_IF (rsuNodes.GetN () > 1, "This example works with a single RSU");
+  
+  for (const auto& i : ueList)
+  {
+    // create the vehicular node and add it to the container
+    Ptr<Node> n = CreateObject<Node> ();
+    ueNodes.Add (n);
+    
+    // create the gemv tag and aggregate it to the node
+    Ptr<GemvTag> tag = CreateObject<GemvTag>();
+    tag->SetTagId(i);
+    tag->SetNodeType(false);
+    n->AggregateObject (tag);
+  }
+  NS_LOG_UNCOND ("Number of UE nodes: " << ueNodes.GetN ());
 
   // Install Mobility Model
+  // NB: mobility of vehicular nodes is already taken into account in GEMV 
+  // traces, we use a constant position mobility model
   MobilityHelper mobility;
   mobility.SetMobilityModel ("ns3::ConstantPositionMobilityModel");
-  mobility.Install (nodes);
+  mobility.Install (rsuNodes);
   mobility.Install (ueNodes);
 
   AsciiTraceHelper asciiTraceHelper;
-  Ptr<OutputStreamWrapper> stream_1 = asciiTraceHelper.CreateFileStream ("powerTest-3.txt");
-  Ptr<OutputStreamWrapper> stream_2 = asciiTraceHelper.CreateFileStream ("losCondition-3.txt");
+  Ptr<OutputStreamWrapper> stream_1 = asciiTraceHelper.CreateFileStream ("receivedPower.txt");
+  Ptr<OutputStreamWrapper> stream_2 = asciiTraceHelper.CreateFileStream ("losCondition.txt");
 
-  for (uint8_t i = 0; i < 25; i++)
+  for (auto i = 0; i < simTime / timeRes; i++)
   {
-    Simulator::Schedule (Seconds (i), &ReadPower, stream_1, gemv, 0, nodes.Get (0), ueNodes);
-    Simulator::Schedule (Seconds (i), &ReadLosCondition, stream_2, gemv, nodes.Get (0), ueNodes);
+    Simulator::Schedule (timeRes * i, &ReadPower, stream_1, gemv, 0, rsuNodes.Get (0), ueNodes);
+    Simulator::Schedule (timeRes * i, &ReadLosCondition, stream_2, gemv, rsuNodes.Get (0), ueNodes);
   } 
 
   Simulator::Run();
-  Simulator::Stop(Seconds(25));
+  Simulator::Stop(simTime);
   return 0;
 }
