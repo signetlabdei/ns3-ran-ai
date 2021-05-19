@@ -349,6 +349,24 @@ GemvPropagationLossModel::DoCalcRxPower (double txPowerDbm,
   return txPowerDbm + gain;
 }
 
+Time
+GemvPropagationLossModel::GetMaxSimulationTime () const
+{
+  std::string fileName {m_path + "numCommPairsPerTimestep_V2V.csv"};
+  CsvReader csv (fileName, '\n');
+  uint64_t index = 0;
+  while (csv.FetchNextRow ())
+    {
+      // Ignore blank lines
+      if (csv.IsBlankRow ())
+        {
+          continue;
+        }
+      ++index;
+    } // while FetchNextRow
+  return index * m_timeResolution;
+}
+
 void
 GemvPropagationLossModel::SetTimeResolution (Time t)
 {

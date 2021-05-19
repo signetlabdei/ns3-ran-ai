@@ -103,6 +103,14 @@ public:
    */
   uint8_t ReadPairLosCondition (Ptr<MobilityModel> a,
                                 Ptr<MobilityModel> b) const;
+                                
+  /**
+   * Returns the maximum time that can be simulated with the associated 
+   * GEMv2 trace file 
+   * 
+   * \return the maximum simulation time
+   */                            
+  Time GetMaxSimulationTime () const;
 
   private :
       /**
