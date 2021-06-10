@@ -329,23 +329,26 @@ void
 MmWaveSpectrumPhy::ConfigureBeamforming (Ptr<NetDevice> device)
 {
   NS_LOG_FUNCTION (this << device);
-  Ptr<ThreeGppAntennaArrayModel> antenna;
-
-  // test if device is a MmWaveNetDevice
-  Ptr<MmWaveNetDevice> mmNetDevice = DynamicCast<MmWaveNetDevice> (device);
-  if (mmNetDevice)
+  if (m_beamforming)
+  {
+    Ptr<ThreeGppAntennaArrayModel> antenna;
+    
+    // test if device is a MmWaveNetDevice
+    Ptr<MmWaveNetDevice> mmNetDevice = DynamicCast<MmWaveNetDevice> (device);
+    if (mmNetDevice)
     {
       antenna = mmNetDevice->GetAntenna (m_componentCarrierId);
     }
-
-  // test if device is a MmWaveNetDevice
-  Ptr<McUeNetDevice> mcUeNetDevice = DynamicCast<McUeNetDevice> (device);
-  if (mcUeNetDevice)
+    
+    // test if device is a MmWaveNetDevice
+    Ptr<McUeNetDevice> mcUeNetDevice = DynamicCast<McUeNetDevice> (device);
+    if (mcUeNetDevice)
     {
       antenna = mcUeNetDevice->GetAntenna (m_componentCarrierId);
     }
-  
-  m_beamforming->SetBeamformingVectorForDevice (device, antenna);
+    
+    m_beamforming->SetBeamformingVectorForDevice (device, antenna);
+  }
 }
 
 void

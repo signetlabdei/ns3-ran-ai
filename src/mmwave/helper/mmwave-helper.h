@@ -320,6 +320,16 @@ public:
   void EnableDlPhyTrace ();
   void EnableUlPhyTrace ();
   void EnableEnbSchedTrace ();
+  
+  void CreateMmWaveDefaultCc ();
+  void CreateLteDefaultCc ();
+  
+  void SetChannel (Ptr<SpectrumChannel> channel, uint8_t ccId);
+  
+  NetDeviceContainer InstallSub6EnbDevice (NodeContainer n);
+  Ptr<NetDevice> InstallSingleSub6EnbDevice (Ptr<Node>);
+  NetDeviceContainer InstallSub6UeDevice (NodeContainer n);
+  Ptr<NetDevice> InstallSingleSub6UeDevice (Ptr<Node>);
 
   
 protected:
@@ -369,7 +379,6 @@ private:
   ObjectFactory m_lteEnbNetDeviceFactory;
   ObjectFactory m_ueNetDeviceFactory;
   ObjectFactory m_mcUeNetDeviceFactory;
-  ObjectFactory m_channelFactory;               // TODO check if one factory for the channel is enough
   ObjectFactory m_channelConditionModelFactory; //!< the factory for the ChannelConditionModel objects
   ObjectFactory m_pathlossModelFactory;         // Each channel (mmWave, LteUl & LteDl) may have a different pathloss with diff attributes
   ObjectFactory m_spectrumPropagationLossModelFactory; //!< the factory for the SpectrumPropagationLossModel objects

@@ -655,7 +655,10 @@ MmWaveEnbPhy::UpdateUeSinrEstimate ()
       Ptr<SpectrumValue> rxPsd = txPsd->Copy ();
       *(rxPsd) *= pathGainLinear;
 
-      rxPsd = m_spectrumPropagationLossModel->CalcRxPowerSpectralDensity (rxPsd, ueMob, enbMob);
+      if (m_spectrumPropagationLossModel)
+      {
+        rxPsd = m_spectrumPropagationLossModel->CalcRxPowerSpectralDensity (rxPsd, ueMob, enbMob);
+      }
       NS_LOG_LOGIC ("RxPsd " << *rxPsd);
 
       m_rxPsdMap[ue->first] = rxPsd;
