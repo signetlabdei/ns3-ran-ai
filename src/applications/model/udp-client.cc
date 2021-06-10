@@ -69,6 +69,9 @@ UdpClient::GetTypeId (void)
                    UintegerValue (1024),
                    MakeUintegerAccessor (&UdpClient::m_size),
                    MakeUintegerChecker<uint32_t> (12,65507))
+    .AddTraceSource ("TxWithSeqTsSize", "A new packet is created with SeqTsSizeHeader",
+                     MakeTraceSourceAccessor (&UdpClient::m_txTraceWithSeqTsSize),
+                     "ns3::PacketSink::SeqTsSizeCallback")
   ;
   return tid;
 }
@@ -173,10 +176,18 @@ UdpClient::Send (void)
 {
   NS_LOG_FUNCTION (this);
   NS_ASSERT (m_sendEvent.IsExpired ());
-  SeqTsHeader seqTs;
-  seqTs.SetSeq (m_sent);
-  Ptr<Packet> p = Create<Packet> (m_size-(8+4)); // 8+4 : the size of the seqTs header
-  p->AddHeader (seqTs);
+
+  SeqTsSizeHeader header;
+  Address from, to;
+  m_socket->GetSockName (from);
+  m_socket->GetPeerName (to);
+  header.SetSeq (m_sent);
+  header.SetSize (m_size);
+  NS_ABORT_IF (m_size < header.GetSerializedSize ());
+  Ptr<Packet> packet = Create<Packet> (m_size - header.GetSerializedSize ());
+  // Trace before adding header, for consistency with PacketSink
+  m_txTraceWithSeqTsSize (packet, from, to, header);
+  packet->AddHeader (header);
 
   std::stringstream peerAddressStringStream;
   if (Ipv4Address::IsMatchingType (m_peerAddress))
@@ -188,13 +199,13 @@ UdpClient::Send (void)
       peerAddressStringStream << Ipv6Address::ConvertFrom (m_peerAddress);
     }
 
-  if ((m_socket->Send (p)) >= 0)
+  if ((m_socket->Send (packet)) >= 0)
     {
       ++m_sent;
-      m_totalTx += p->GetSize ();
+      m_totalTx += packet->GetSize ();
       NS_LOG_INFO ("TraceDelay TX " << m_size << " bytes to "
                                     << peerAddressStringStream.str () << " Uid: "
-                                    << p->GetUid () << " Time: "
+                                    << packet->GetUid () << " Time: "
                                     << (Simulator::Now ()).As (Time::S));
 
     }

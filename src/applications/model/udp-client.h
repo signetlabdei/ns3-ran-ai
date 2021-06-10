@@ -27,6 +27,8 @@
 #include "ns3/event-id.h"
 #include "ns3/ptr.h"
 #include "ns3/ipv4-address.h"
+#include "ns3/seq-ts-size-header.h"
+#include "ns3/traced-callback.h"
 
 namespace ns3 {
 
@@ -83,6 +85,7 @@ private:
    */
   void Send (void);
 
+  TracedCallback<Ptr<const Packet>, const Address &, const Address &, const SeqTsSizeHeader &> m_txTraceWithSeqTsSize; //!< Traced Callback: sent packets, with additional header
   uint32_t m_count; //!< Maximum number of packets the application will send
   Time m_interval; //!< Packet inter-send time
   uint32_t m_size; //!< Size of the sent packet (including the SeqTsHeader)
