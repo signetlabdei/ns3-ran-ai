@@ -2678,7 +2678,7 @@ MmWaveHelper::EnableTraces (void)
 {
   EnableDlPhyTrace ();
   EnableUlPhyTrace ();
-  EnableEnbSchedTrace ();
+  // EnableEnbSchedTrace ();
   //EnableTransportBlockTrace (); //the callback does nothing
   EnableRlcTraces ();
   EnablePdcpTraces ();
@@ -2702,8 +2702,8 @@ MmWaveHelper::EnableDlPhyTrace (void)
   //Config::Connect ("/NodeList/*/DeviceList/*/MmWaveUePhy/ReportCurrentCellRsrpSinr",
   //		MakeBoundCallback (&MmWavePhyTrace::ReportCurrentCellRsrpSinrCallback, m_phyStats));
 
-  Config::ConnectWithoutContextFailSafe ("/NodeList/*/DeviceList/*/ComponentCarrierMap/*/MmWaveEnbPhy/ReportDlPhyTransmission", 
-                                 MakeBoundCallback (&MmWavePhyTrace::ReportDlPhyTransmissionCallback, m_phyStats));
+  // Config::ConnectWithoutContextFailSafe ("/NodeList/*/DeviceList/*/ComponentCarrierMap/*/MmWaveEnbPhy/ReportDlPhyTransmission", 
+                                 // MakeBoundCallback (&MmWavePhyTrace::ReportDlPhyTransmissionCallback, m_phyStats));
 
   // regulare mmWave UE device
   Config::ConnectFailSafe ("/NodeList/*/DeviceList/*/ComponentCarrierMap/*/MmWaveUePhy/DlSpectrumPhy/RxPacketTraceUe",

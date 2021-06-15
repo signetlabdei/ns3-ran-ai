@@ -31,6 +31,7 @@
 #include "ns3/mmwave-point-to-point-epc-helper.h"
 #include "ns3/internet-module.h"
 #include "ns3/point-to-point-helper.h"
+#include <unistd.h>
 
 using namespace ns3;
 using namespace mmwave;
@@ -46,6 +47,7 @@ main (int argc, char *argv[])
   double ulIpiMicroS = 100e3;
   double dlIpiMicroS = 500e3;
   double bandwidth = 50e6;
+  std::string gemvTracesPath = "./input/bolognaLeftHalfRSU3_50vehicles_100sec/13-May-2021_";
 
   CommandLine cmd;
   cmd.AddValue ("numUes", "Number of UE nodes", numUes);
@@ -54,19 +56,24 @@ main (int argc, char *argv[])
                                      "will be assigned", firstVehicleIndex);
   cmd.AddValue ("ulIpiMicroS", "Uplink IPI in ms", ulIpiMicroS);
   cmd.AddValue ("dlIpiMicroS", "Downlink IPI in ms", dlIpiMicroS);
+  cmd.AddValue ("gemvTracesPath", "Path of the GEMv2 traces", gemvTracesPath);
   cmd.Parse (argc, argv);
   
-  Config::SetDefault ("ns3::MmWaveBearerStatsCalculator::AggregatedStats", BooleanValue (false));
+  Config::SetDefault ("ns3::MmWaveBearerStatsCalculator::AggregatedStats", BooleanValue (true));
   Config::SetDefault ("ns3::MmWavePhyMacCommon::Bandwidth", DoubleValue (bandwidth));
   Config::SetDefault ("ns3::MmWaveHelper::RlcAmEnabled", BooleanValue (true));
   Config::SetDefault ("ns3::UdpClient::PacketSize", UintegerValue (packetSizeBytes));
+  Config::SetDefault ("ns3::MmWavePhyMacCommon::NumHarqProcess", UintegerValue (100));
+  Config::SetDefault ("ns3::LteRlcAm::PollRetransmitTimer", TimeValue (MilliSeconds (100)));
   
   Ptr<GemvPropagationLossModel> gemv = CreateObject<GemvPropagationLossModel> ();
-  gemv->SetPath ("/home/tommaso/workspace/huawei-pqos/GEMV2PackageV1.2/outputSim/bolognaLeftHalfRSU3_50vehicles_100sec/13-May-2021_");
+  
+  char buffer [256];
+  std::cout << "Current path is " << getcwd (buffer, sizeof (buffer)) << std::endl;
+  gemv->SetPath (gemvTracesPath);
   Time timeRes = MilliSeconds (100);
   gemv->SetTimeResolution (timeRes);
-  Time simTime = gemv->GetMaxSimulationTime ();
-  NS_LOG_UNCOND ("Simulation time: " << simTime.GetSeconds () << " s");
+  Time maxSimTime = gemv->GetMaxSimulationTime ();
   gemv->SetAttribute ("IncludeSmallScale", BooleanValue (true));
 
   std::vector<uint16_t> rsuList = gemv->GetDistinctIds(true);
@@ -88,10 +95,10 @@ main (int argc, char *argv[])
     tag->SetNodeType(true);
     n->AggregateObject (tag);
   }
-  NS_LOG_UNCOND ("Number of RSU nodes: " << rsuNodes.GetN ());
+  std::cout << "Number of RSU nodes: " << rsuNodes.GetN () << std::endl;
   NS_ABORT_MSG_IF (rsuNodes.GetN () > 1, "This example works with a single RSU");
   
-  for (size_t i = firstVehicleIndex; i < numUes; i++)
+  for (size_t i = firstVehicleIndex; i < firstVehicleIndex + numUes; i++)
   {
     // create the vehicular node and add it to the container
     Ptr<Node> n = CreateObject<Node> ();
@@ -103,7 +110,8 @@ main (int argc, char *argv[])
     tag->SetNodeType (false);
     n->AggregateObject (tag);
   }
-  NS_LOG_UNCOND ("Number of UE nodes: " << ueNodes.GetN ());
+  std::cout << "Number of UE nodes: " << ueNodes.GetN () << std::endl;
+  NS_ABORT_MSG_IF (ueNodes.GetN () < 1, "At least one UE is required");
 
   // Install Mobility Model
   // NB: mobility of vehicular nodes is already taken into account in GEMV 
@@ -172,8 +180,8 @@ main (int argc, char *argv[])
   ApplicationContainer serverApps;
   Time ulIpi = MicroSeconds (ulIpiMicroS);
   Time dlIpi = MicroSeconds (dlIpiMicroS);
-  NS_LOG_UNCOND ("Total UL rate " << packetSizeBytes * 8 / ulIpi.GetSeconds () / 1e6 * numUes << " Mbps");
-  NS_LOG_UNCOND ("Total DL rate " << packetSizeBytes * 8 / dlIpi.GetSeconds () / 1e6 * numUes << " Mbps");
+  std::cout << "Total UL rate " << packetSizeBytes * 8 / ulIpi.GetSeconds () / 1e6 * numUes << " Mbps" << std::endl;
+  std::cout << "Total DL rate " << packetSizeBytes * 8 / dlIpi.GetSeconds () / 1e6 * numUes << " Mbps" << std::endl;
   for (uint32_t u = 0; u < ueNodes.GetN (); ++u)
     {
       PacketSinkHelper dlPacketSinkHelper ("ns3::UdpSocketFactory", 
@@ -201,10 +209,13 @@ main (int argc, char *argv[])
     }
   serverApps.Start (MilliSeconds (10));
   clientApps.Start (MilliSeconds (100));
+  clientApps.Stop (maxSimTime - Seconds (2.0));
   mmWaveHelper->EnableTraces ();
   
-  
+  Time simTime = maxSimTime - Seconds (1.0);
+  std::cout << "Max simulation time: " << maxSimTime.GetSeconds () << " s" << "\n";
+  std::cout << "Actual simulation time: " << simTime.GetSeconds () << " s" << "\n";
+  Simulator::Stop(simTime); 
   Simulator::Run();
-  Simulator::Stop(simTime);
   return 0;
 }
