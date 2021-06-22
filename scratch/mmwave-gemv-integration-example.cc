@@ -18,6 +18,7 @@
  */
 
 #include <fstream>
+#include <iomanip>
 #include "ns3/core-module.h"
 #include "ns3/mobility-module.h"
 #include "ns3/gemv-propagation-loss-model.h"
@@ -33,10 +34,29 @@
 #include "ns3/point-to-point-helper.h"
 #include <unistd.h>
 
+#include "ns3/seq-ts-size-frag-header.h"
+#include "ns3/bursty-helper.h"
+#include "ns3/burst-sink-helper.h"
+#include "ns3/bursty-app-stats-calculator.h"
+
 using namespace ns3;
 using namespace mmwave;
 
 NS_LOG_COMPONENT_DEFINE ("GemvIntegrationExample");
+
+static void
+RxBurstCallback (uint32_t nodeId, Ptr<BurstyAppStatsCalculator> statsCalculator, Ptr<const Packet> burst, const Address &from,
+         const Address &to, const SeqTsSizeFragHeader &header)
+{
+  statsCalculator->RxBurst (nodeId, burst, from, to, header);
+}
+
+static void
+TxBurstCallback (uint32_t nodeId, Ptr<BurstyAppStatsCalculator> statsCalculator, Ptr<const Packet> burst,
+                 const Address &from, const Address &to, const SeqTsSizeFragHeader &header)
+{
+  statsCalculator->TxBurst (nodeId, burst, from, to, header);
+}
 
 int
 main (int argc, char *argv[])
@@ -47,7 +67,10 @@ main (int argc, char *argv[])
   double ulIpiMicroS = 100e3;
   double dlIpiMicroS = 500e3;
   double bandwidth = 50e6;
+  std::string appTracesPath = "input/kitti-dataset.csv";
   std::string gemvTracesPath = "./input/bolognaLeftHalfRSU3_50vehicles_100sec/13-May-2021_";
+  std::string appType = "kitti";
+  uint32_t kittiModel = 1450;
 
   CommandLine cmd;
   cmd.AddValue ("numUes", "Number of UE nodes", numUes);
@@ -57,9 +80,16 @@ main (int argc, char *argv[])
   cmd.AddValue ("ulIpiMicroS", "Uplink IPI in ms", ulIpiMicroS);
   cmd.AddValue ("dlIpiMicroS", "Downlink IPI in ms", dlIpiMicroS);
   cmd.AddValue ("gemvTracesPath", "Path of the GEMv2 traces", gemvTracesPath);
+  cmd.AddValue ("appTracesPath", "The path to the input trace of the application, if applicable.",
+                appTracesPath);
+  cmd.AddValue ("applicationType", "Uplink application to install in the clients [classic, kitti].", appType);
+  cmd.AddValue ("kittiModel", "Compression type [1450, 1451, 1452, 1150]", kittiModel);
   cmd.Parse (argc, argv);
   
   Config::SetDefault ("ns3::MmWaveBearerStatsCalculator::AggregatedStats", BooleanValue (true));
+  Config::SetDefault ("ns3::MmWaveBearerStatsCalculator::EpochDuration", TimeValue (Seconds (0.1)));
+  Config::SetDefault ("ns3::BurstyAppStatsCalculator::EpochDuration", TimeValue (Seconds (0.1)));
+  Config::SetDefault ("ns3::KittiTraceBurstGenerator::Model", UintegerValue (kittiModel));
   Config::SetDefault ("ns3::MmWavePhyMacCommon::Bandwidth", DoubleValue (bandwidth));
   Config::SetDefault ("ns3::MmWaveHelper::RlcAmEnabled", BooleanValue (true));
   Config::SetDefault ("ns3::UdpClient::PacketSize", UintegerValue (packetSizeBytes));
@@ -178,35 +208,81 @@ main (int argc, char *argv[])
   uint16_t ulPort = 2000;
   ApplicationContainer clientApps;
   ApplicationContainer serverApps;
+  Ptr<BurstyAppStatsCalculator> statsCalculator = CreateObject<BurstyAppStatsCalculator>();
   Time ulIpi = MicroSeconds (ulIpiMicroS);
   Time dlIpi = MicroSeconds (dlIpiMicroS);
-  std::cout << "Total UL rate " << packetSizeBytes * 8 / ulIpi.GetSeconds () / 1e6 * numUes << " Mbps" << std::endl;
-  std::cout << "Total DL rate " << packetSizeBytes * 8 / dlIpi.GetSeconds () / 1e6 * numUes << " Mbps" << std::endl;
+  
   for (uint32_t u = 0; u < ueNodes.GetN (); ++u)
     {
-      PacketSinkHelper dlPacketSinkHelper ("ns3::UdpSocketFactory", 
-                                           InetSocketAddress (Ipv4Address::GetAny (), 
-                                           dlPort));
-      PacketSinkHelper ulPacketSinkHelper ("ns3::UdpSocketFactory", 
-                                           InetSocketAddress (Ipv4Address::GetAny (), 
-                                           ulPort));
+      // Set up DL application
+      PacketSinkHelper dlPacketSinkHelper ("ns3::UdpSocketFactory",
+                                           InetSocketAddress (Ipv4Address::GetAny (), dlPort));
       dlPacketSinkHelper.SetAttribute ("EnableSeqTsSizeHeader", BooleanValue (true));
-      ulPacketSinkHelper.SetAttribute ("EnableSeqTsSizeHeader", BooleanValue (true));
       serverApps.Add (dlPacketSinkHelper.Install (ueNodes.Get (u)));
-      serverApps.Add (ulPacketSinkHelper.Install (remoteHost));
 
       UdpClientHelper dlClient (ueIpIface.GetAddress (u), dlPort);
       dlClient.SetAttribute ("Interval", TimeValue (dlIpi));
       dlClient.SetAttribute ("MaxPackets", UintegerValue (0xFFFFF));
 
-      UdpClientHelper ulClient (remoteHostAddr, ulPort);
-      ulClient.SetAttribute ("Interval", TimeValue (ulIpi));
-      ulClient.SetAttribute ("MaxPackets", UintegerValue (0xFFFFF));
-
       clientApps.Add (dlClient.Install (remoteHost));
-      clientApps.Add (ulClient.Install (ueNodes.Get(u)));
+
+
+      // Set up UL Application
+
+      if (appType == "classic")
+        {
+          PacketSinkHelper ulPacketSinkHelper ("ns3::UdpSocketFactory",
+                                               InetSocketAddress (Ipv4Address::GetAny (), ulPort));
+          ulPacketSinkHelper.SetAttribute ("EnableSeqTsSizeHeader", BooleanValue (true));
+          serverApps.Add (ulPacketSinkHelper.Install (remoteHost));
+
+          UdpClientHelper ulClient (remoteHostAddr, ulPort);
+          ulClient.SetAttribute ("Interval", TimeValue (ulIpi));
+          ulClient.SetAttribute ("MaxPackets", UintegerValue (0xFFFFF));
+
+          clientApps.Add (ulClient.Install (ueNodes.Get (u)));
+        }
+      else if (appType == "kitti")
+        {
+          // Create bursty application helper
+          BurstyHelper burstyHelper ("ns3::UdpSocketFactory",
+                                     InetSocketAddress (remoteHostAddr, ulPort));
+          burstyHelper.SetAttribute ("FragmentSize", UintegerValue (1200));
+          burstyHelper.SetBurstGenerator ("ns3::KittiTraceBurstGenerator", "TraceFile", StringValue (appTracesPath));
+
+          clientApps.Add (burstyHelper.Install (ueNodes.Get (u)));
+
+          Ptr<BurstyApplication> burstyApp = DynamicCast<BurstyApplication>  (clientApps.Get ( clientApps.GetN() - 1 )); // obtain the last one inserted
+          burstyApp->TraceConnectWithoutContext ("BurstTx", MakeBoundCallback (&TxBurstCallback, ueNodes.Get (u)->GetId(), statsCalculator));
+
+          // Create burst sink helper
+          BurstSinkHelper burstSinkHelper ("ns3::UdpSocketFactory",
+                                           InetSocketAddress (Ipv4Address::GetAny (), ulPort));
+          // Install bursty sink
+          serverApps.Add (burstSinkHelper.Install (remoteHost));
+          Ptr<BurstSink> burstSink = DynamicCast<BurstSink> (serverApps.Get ( serverApps.GetN() - 1 )); // obtain the last one inserted
+
+          // Connect application traces
+          burstSink->TraceConnectWithoutContext ("BurstRx", MakeBoundCallback (&RxBurstCallback, ueNodes.Get (u)->GetId(), statsCalculator));
+        }
+      else
+        {
+          NS_FATAL_ERROR ("Application not supported.");
+        }
+
       ++ulPort;
     }
+  
+  if (appType == "classic")
+  {
+    std::cout << "UL APP: UDP | Total UL rate " << packetSizeBytes * 8 / ulIpi.GetSeconds () / 1e6 * numUes << " Mbps" << std::endl;
+  }
+  else if (appType == "kitti")
+  {
+    std::cout << "UL APP: kitti | Compression level " << kittiModel << std::endl;
+  }
+  std::cout << "DL APP: UDP | Total DL rate " << packetSizeBytes * 8 / dlIpi.GetSeconds () / 1e6 * numUes << " Mbps" << std::endl;
+
   serverApps.Start (MilliSeconds (10));
   clientApps.Start (MilliSeconds (100));
   clientApps.Stop (maxSimTime - Seconds (2.0));
