@@ -162,6 +162,22 @@ public:
    */
   int32_t GetIndex (uint16_t nodeOne, uint16_t nodeTwo, std::string commType) const;
   /**
+   * Checks if the gain value stored in the map m_gainMap needs to be updated   
+   * 
+   * \param key the key which identifies the node pair
+   * \returns true if the gain value needs to be updated or if it is not present 
+   *          in the map, false otherwise
+   */  
+  bool NeedsUpdate (uint32_t key) const;
+  /**
+   * Returns the timestep representing the current time instant. It also 
+   * corresponds to the line index of the numCommPairsPerTimestep_XXX.csv file 
+   * associated with the current time instant.  
+   * 
+   * \returns the timestep value 
+   */
+  uint32_t GetTimestep () const;
+  /**
    * If this model uses objects of type RandomVariableStream,
    * set the stream numbers to the integers starting with the offset
    * 'stream'. Return the number of streams (possibly zero) that
@@ -175,6 +191,8 @@ public:
   Time m_timeResolution; //!< time resolution used by the input traces 
   std::string m_path; //!< absolute path to the input traces
   bool m_smallScaleEnabled; //!< flag indicator for including small scale variation in rx power evaluations
+  typedef std::pair<uint32_t, double> GainItem; //!< pair of generation time (timestep) and gain 
+  mutable std::map<uint32_t, GainItem> m_gainMap; //!< stores the gain computed at the last time step for each node pair
 };
 
 } // namespace ns3

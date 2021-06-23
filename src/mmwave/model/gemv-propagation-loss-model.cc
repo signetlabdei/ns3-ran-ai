@@ -30,6 +30,7 @@
 #include "ns3/node.h"
 #include "ns3/gemv-tag.h"
 #include "ns3/mobility-module.h"
+#include "ns3/matrix-based-channel-model.h"
 
 namespace ns3 {
 
@@ -178,10 +179,8 @@ GemvPropagationLossModel::GetIndex (uint16_t nodeOne, uint16_t nodeTwo, std::str
 {
   // The following snippet of code works both for V2I and V2V.
   // In case of V2I pair, nodeOne will always correspond to the RSU/eNB
-
-  // Row number to check (CsvReader counts rows starting from 1, while timestep takes values in [0,inf])
   
-  uint32_t timestep = std::floor ((Simulator::Now () / m_timeResolution).GetDouble ()) + 1;
+  uint32_t timestep = GetTimestep ();
   
   std::pair<uint32_t, uint32_t> interval = ReadTimestep (timestep, commType);
   
@@ -296,6 +295,30 @@ GemvPropagationLossModel::ReadPairLosCondition (Ptr<MobilityModel> a,
   return 0; // corresponding to an invalid LOS condition (this pair is not in the traces)
 }
 
+bool 
+GemvPropagationLossModel::NeedsUpdate (uint32_t key) const
+{
+  bool update = true;
+  auto it = m_gainMap.find (key);
+  if (it != m_gainMap.end ())
+  {
+    update = (it->second.first != GetTimestep ());
+  }
+  NS_LOG_DEBUG ("gain with key " << key << 
+                " was generated at ts " << it->second.first <<
+                " ,current ts " << GetTimestep () << 
+                " ,update= " << update);
+  return update;
+}
+
+uint32_t
+GemvPropagationLossModel::GetTimestep () const
+{
+  // Row number to check (CsvReader counts rows starting from 1, while timestep takes values in [0,inf])
+  uint32_t timestep = std::floor ((Simulator::Now () / m_timeResolution).GetDouble ()) + 1;
+  return timestep;
+}
+
 double
 GemvPropagationLossModel::DoCalcRxPower (double txPowerDbm,
                                              Ptr<MobilityModel> a,
@@ -338,29 +361,50 @@ GemvPropagationLossModel::DoCalcRxPower (double txPowerDbm,
     }
   }
 
-  int32_t index = GetIndex (nodeOne, nodeTwo, commType);
+  // Compute the key which identifies the node pair. The key is simmetric, 
+  // so that there is a single entry per node pair.
+  uint32_t key = MatrixBasedChannelModel::GetKey (nodeOne, nodeTwo);
+  
+  // Check if the entry in the map associated with this key needs to be 
+  // updated or if it is not present.
+  bool update = NeedsUpdate (key);
 
   double gain {};
-
-  // In case the index is -1, there is not a correspondence for (nodeOne, nodeTwo) in the traces.
-  // As a consequence, we return a -inf gain, representing the nodes not communicating.
-  if (index != -1)
+  
+  if (update)
   {
-    std::string fileName{m_path + "largeScalePwr_" + commType + ".csv"};
-    gain += ReadRxPower (index, fileName); // get pathloss
+    NS_LOG_DEBUG ("Update gain with key " << key);
+    int32_t index = GetIndex (nodeOne, nodeTwo, commType);
     
-    if (m_smallScaleEnabled)
+    // In case the index is -1, there is not a correspondence for (nodeOne, nodeTwo) in the traces.
+    // As a consequence, we return a -inf gain, representing the nodes not communicating.
+    if (index != -1)
     {
-      fileName = m_path + "smallScaleVar_" + commType + ".csv";
-      gain += ReadRxPower (index, fileName); // get small scale variations
+      std::string fileName{m_path + "largeScalePwr_" + commType + ".csv"};
+      gain += ReadRxPower (index, fileName); // get pathloss
+      
+      if (m_smallScaleEnabled)
+      {
+        fileName = m_path + "smallScaleVar_" + commType + ".csv";
+        gain += ReadRxPower (index, fileName); // get small scale variations
+      }
+      
+    }
+    else
+    {
+      gain = -std::numeric_limits<double>::infinity();
     }
 
-    NS_LOG_DEBUG("Gain:" << gain << " dBm");
+    // store the gain value in the m_gainMap
+    GainItem item = std::make_pair (GetTimestep (), gain);
+    m_gainMap [key] = item;
   }
   else
   {
-    gain = -std::numeric_limits<double>::infinity();
+    NS_LOG_DEBUG ("key " << key << " uses the old gain value");
+    gain = m_gainMap.at (key).second;
   }
+  NS_LOG_DEBUG("Gain:" << gain << " dBm");
 
   return txPowerDbm + gain;
 }
