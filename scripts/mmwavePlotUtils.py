@@ -1,4 +1,7 @@
 import sem
+import pandas as pd
+from io import StringIO
+import matplotlib.pyplot as plt
 
 """
     Read RxPacketTrace.txt trace file and return a list containing the 
@@ -150,3 +153,82 @@ def read_ulRlcStatsTrace (result):
         row = read_pdcpAndRlcStats (values)
         data += [row]
     return data
+    
+"""
+    Read AppStats.txt trace file and return a list containing the 
+    parsed values. Can be used as input for the function 
+    get_results_as_dataframe provided by sem.
+    Args:
+        result (str): the content of AppStats.txt as a string
+"""
+@sem.utils.yields_multiple_results
+@sem.utils.output_labels(['start [s]', 'end [s]', 'NodeId', 'nTxBursts', 'TxBytes', 
+                          'nRxBursts', 'RxBytes', 'delay [s]', 'stdDev', 'min', 
+                          'max', 'avg prr'])
+@sem.utils.only_load_some_files(r'.*AppStats.txt')
+def read_appStatsTrace (result):    
+    data = [] 
+    lines = result['output']['AppStats.txt'].splitlines()
+    for line in lines [1:]:
+        values = line.split ("\t")
+        nTxBursts = int (values [3]) 
+        nRxBursts = int (values [5]) 
+        row = [float (values [0]), # start [s]
+               float (values [1]), # end [s]
+               int (values [2]), # NodeId
+               nTxBursts, # nTxBursts
+               int (values [4]), # TxBytes
+               nRxBursts, # nRxBursts
+               int (values [6]), # RxBytes
+               float (values [7])/1e9, # delay [ns]
+               float (values [8]), # stdDev
+               float (values [9]), # min
+               float (values [10]), # max
+               nRxBursts / nTxBursts] # avg prr
+        data += [row]
+    return data
+    
+"""
+    Read RxPacketTrace.txt trace file, parse it using a sampling time of 100 ms 
+    and return a list containing the sampled values. 
+    Can be used as input for the function get_results_as_dataframe provided by sem.
+    Args:
+        result (str): the content of RxPacketTrace.txt as a string
+"""
+@sem.utils.yields_multiple_results
+@sem.utils.output_labels(['Time [s]', 'OFDM symbols', 'Cell ID', 'RNTI', 
+                          'CC ID', 'TB size [bytes]', 'MCS', 'SINR [dB]', 'UL/DL'])
+@sem.utils.only_load_some_files(r'.*RxPacketTrace.txt')
+def sample_rxPacketTrace (result):    
+    data = []
+    df = pd.read_csv (StringIO (result ['output']['RxPacketTrace.txt']), 
+                      delimiter = "\t", index_col=False, 
+                      usecols = [0, 1, 6, 7, 8, 9, 10, 11, 13], 
+                      names = ['UL/DL', 'Time [s]', 'OFDM symbols', 'Cell ID', 
+                               'RNTI', 'CC ID', 'TB size [bytes]', 'MCS', 'SINR [dB]'], 
+                      dtype = {'mode' : 'object', 
+                               'Time [s]' : 'float', 
+                               'OFDM symbols' : 'int', 
+                               'Cell ID' : 'int', 
+                               'RNTI' : 'int', 
+                               'CC ID' : 'int', 
+                               'TB size [bytes]' : 'int', 
+                               'MCS' : 'int', 
+                               'SINR [dB]' : 'float'}, 
+                      engine='python', header=0)
+    
+    grouper = df.groupby (['Cell ID', 'RNTI', 'CC ID', 'UL/DL'])
+    sampledDf = pd.DataFrame ()
+    for name, group in grouper: 
+        group ['Time [s]'] = pd.to_timedelta (group ['Time [s]'], unit='s')
+        group.set_index ('Time [s]', inplace=True)
+        
+        numeric = group.select_dtypes('number').columns
+        non_num = group.columns.difference(numeric)
+        d = {**{x: 'mean' for x in numeric}, **{x: 'first' for x in non_num}}
+
+        group = group.resample ("100ms").agg (d)
+        group.reset_index (inplace=True)
+        sampledDf = sampledDf.append (group, ignore_index=True)
+    
+    return sampledDf.values.tolist ()
