@@ -51,12 +51,12 @@ KittiTraceBurstGenerator::GetTypeId (void)
                                               &KittiTraceBurstGenerator::GetScene),
                          MakeIntegerChecker<int> (0))
           .AddAttribute ("Model",
-                         "Traffic model to be used by the application. As of now only [1150, 1450, "
-                         "1451, 1452] are supported",
+                         "Traffic model to be used by the application. As of now only [0, 1, 2, "
+                         "1150, 1450, 1451, 1452] are supported",
                          UintegerValue (1450),
                          MakeUintegerAccessor (&KittiTraceBurstGenerator::SetModel,
                                                &KittiTraceBurstGenerator::GetModel),
-                         MakeUintegerChecker<uint32_t> (1))
+                         MakeUintegerChecker<uint32_t> ())
           .AddAttribute ("FramePeriod",
                          "Distance between two consecutive LIDAR-collected frames, in milliseconds",
                          TimeValue (MilliSeconds (100)),
@@ -161,7 +161,9 @@ KittiTraceBurstGenerator::GetScene () const
 void
 KittiTraceBurstGenerator::SetModel (uint32_t mdl)
 {
-  NS_ABORT_MSG_IF (mdl !=  1150 && mdl != 1450 && mdl != 1451 && mdl != 1452, "This traffic model is not supported.");
+  NS_ABORT_MSG_IF (mdl != 0 && mdl != 1 && mdl != 2 && 
+                   mdl !=  1150 && mdl != 1450 && mdl != 1451 && mdl != 1452, 
+                   "This traffic model is not supported.");
   m_model = mdl;
 }
 

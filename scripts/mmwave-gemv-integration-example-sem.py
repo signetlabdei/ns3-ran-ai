@@ -1,3 +1,4 @@
+from mmwave_gemv_integration_campaigns import * 
 import sem
 import numpy as np
 import pandas as pd
@@ -5,39 +6,12 @@ import matplotlib.pyplot as plt
 # # Temporarily limit number of max cores used
 # sem.parallelrunner.MAX_PARALLEL_PROCESSES = 1
 
-campaignName = 'campaign-1'
-ns_path = './'
-ns_script = 'mmwave-gemv-integration-example'
-ns_res_path = './campaigns/' + campaignName
+campaignName  = 'campaign-1'
+(ns_path, ns_script, ns_res_path, 
+ params_grid, _) = get_campaign_params (campaignName)
 
 campaign = sem.CampaignManager.new (ns_path=ns_path, script=ns_script, campaign_dir=ns_res_path, 
                                     optimized=True, check_repo=False, overwrite=False)
-
-if (campaignName == 'test-results'):
-    numTrajectories = 50
-    params_grid = {
-        "RngRun": 1,
-        "firstVehicleIndex": list(range(numTrajectories)),
-        "numUes": 1,
-    	"ulIpiMicroS": 100e3,
-    	"dlIpiMicroS": 500e3,
-        "gemvTracesPath" : '/media/vol2/zugnotom/rsync/ns3-mmwave-pqos/input/bolognaLeftHalfRSU3_50vehicles_100sec/13-May-2021_'
-    }
-elif (campaignName == 'campaign-1'):
-    numTrajectories = 50
-    params_grid = {
-        "RngRun": 1,
-        "firstVehicleIndex": list(range(numTrajectories)),
-        "numUes": 1,
-    	"applicationType" : 'kitti',
-        "kittiModel": [1450, 1452],
-    	"dlIpiMicroS": 500e3,
-        "gemvTracesPath" : '/media/vol2/zugnotom/rsync/ns3-mmwave-pqos/input/bolognaLeftHalfRSU3_50vehicles_100sec/13-May-2021_',
-        "appTracesPath" : '/media/vol2/zugnotom/rsync/ns3-mmwave-pqos/input/kitti-dataset.csv'
-    }
-else:
-    print ('Unknown campaign name')
-    exit ()
     
 overall_list = sem.list_param_combinations(params_grid)
 

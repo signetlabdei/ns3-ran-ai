@@ -164,27 +164,31 @@ def read_ulRlcStatsTrace (result):
 @sem.utils.yields_multiple_results
 @sem.utils.output_labels(['start [s]', 'end [s]', 'NodeId', 'nTxBursts', 'TxBytes', 
                           'nRxBursts', 'RxBytes', 'delay [s]', 'stdDev', 'min', 
-                          'max', 'avg prr'])
+                          'max', 'avg prr', 'avg throughput [bps]'])
 @sem.utils.only_load_some_files(r'.*AppStats.txt')
 def read_appStatsTrace (result):    
     data = [] 
     lines = result['output']['AppStats.txt'].splitlines()
     for line in lines [1:]:
         values = line.split ("\t")
+        start = float (values [0])
+        end = float (values [1])
         nTxBursts = int (values [3]) 
-        nRxBursts = int (values [5]) 
-        row = [float (values [0]), # start [s]
-               float (values [1]), # end [s]
+        nRxBursts = int (values [5])
+        rxBytes = int (values [6])
+        row = [start, # start [s]
+               end, # end [s]
                int (values [2]), # NodeId
                nTxBursts, # nTxBursts
                int (values [4]), # TxBytes
                nRxBursts, # nRxBursts
-               int (values [6]), # RxBytes
+               rxBytes, # RxBytes
                float (values [7])/1e9, # delay [ns]
                float (values [8]), # stdDev
                float (values [9]), # min
                float (values [10]), # max
-               nRxBursts / nTxBursts] # avg prr
+               nRxBursts / nTxBursts, # avg prr
+               rxBytes * 8 / (end - start)] # avg throughput [bps]
         data += [row]
     return data
     
