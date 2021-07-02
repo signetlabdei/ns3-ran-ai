@@ -39,7 +39,20 @@ def get_campaign_params (campaignName):
             "gemvTracesPath" : '/media/vol2/zugnotom/rsync/ns3-mmwave-pqos/input/bolognaLeftHalfRSU3_50vehicles_100sec/13-May-2021_',
             "appTracesPath" : '/media/vol2/zugnotom/rsync/ns3-mmwave-pqos/input/kitti-dataset.csv'
         }
-        figure_path = ns_res_path + '/figures/'       
+    elif (campaignName == 'campaign-2'):
+        numTrajectories = 50
+        params_grid = {
+            "RngRun": 1,
+            "firstVehicleIndex": list(range(numTrajectories)),
+            "numUes": 1,
+        	"applicationType" : 'kitti',
+            "kittiModel": [0, 1, 2, 1150, 1450, 1451, 1452],
+            "txPower" : 23,
+        	"dlIpiMicroS": 500e3,
+            "gemvTracesPath" : '/media/vol2/zugnotom/rsync/ns3-mmwave-pqos/input/bolognaLeftHalfRSU3_50vehicles_100sec/13-May-2021_',
+            "appTracesPath" : '/media/vol2/zugnotom/rsync/ns3-mmwave-pqos/input/kitti-dataset.csv'
+        }
+        figure_path = ns_res_path + '/figures/'      
     else:
         print ('Unknown campaign name')
         exit ()

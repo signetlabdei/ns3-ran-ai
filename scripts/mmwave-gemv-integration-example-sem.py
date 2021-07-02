@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 # # Temporarily limit number of max cores used
 # sem.parallelrunner.MAX_PARALLEL_PROCESSES = 1
 
-campaignName  = 'campaign-1'
+campaignName  = 'campaign-2'
 (ns_path, ns_script, ns_res_path, 
  params_grid, _) = get_campaign_params (campaignName)
 
@@ -36,4 +36,4 @@ for result_entry in results:
     errors.append(check_errors(result_entry))
 
 num_errors = sum(errors)
-print('Overall, we have {num_errors} errors out of {len(results)} simulations!')
+print(f'Overall, we have {num_errors} errors out of {len(results)} simulations!')

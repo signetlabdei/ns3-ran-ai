@@ -102,20 +102,21 @@ def plot_box (rlcOrPdcpResult, metric, figName):
     ax.set_ylabel (metric)
     save_figure (fig, figName + '.pdf')
     
-campaignName = 'test-tx-power'
+campaignName = 'campaign-2'
 (ns_path, ns_script, ns_res_path, 
-allParams, figure_foder) = get_campaign_params (campaignName)
+allParams, base_figure_foder) = get_campaign_params (campaignName)
 for kittiModel in allParams ['kittiModel']:
 
-    params_grid = allParams [allParams ['kittiModel'] == kittiModel]
-    figure_foder = figure_foder + str (kittiModel)
+    params_grid = allParams
+    params_grid ['kittiModel'] = kittiModel
+    figure_foder = base_figure_foder + str (kittiModel)
     Path(figure_foder).mkdir(parents=True, exist_ok=True)
 
     campaign = sem.CampaignManager.load (campaign_dir=ns_res_path)
     overall_list = sem.list_param_combinations(params_grid)
 
     # Use the parsing function to create a Pandas dataframe
-    phyPlots = False
+    phyPlots = True
     appPlots = True
     pdcpPlots = True
     rlcPlots = True
@@ -163,11 +164,11 @@ for kittiModel in allParams ['kittiModel']:
         pdcp_folder = figure_foder + "/pdcp"
         Path(pdcp_folder).mkdir(parents=True, exist_ok=True)
         plot_stat (results, 'end [s]', 'avg prr', pdcp_folder + '/dl-prr', '-')
-        plot_stat (results, 'end [s]', 'avg throughput [bps]', pdcp_folder + '/dl-thr', '-')
+        # plot_stat (results, 'end [s]', 'avg throughput [bps]', pdcp_folder + '/dl-thr', '*')
         plot_stat (results, 'end [s]', 'delay [s]', pdcp_folder + '/dl-delay', '-')
         plot_metric_map (results, 'delay [s]', pdcp_folder + '/dl-delay-map')
         plot_metric_map (results, 'avg prr', pdcp_folder + '/dl-prr-map')
-        plot_metric_map (results, 'avg throughput [bps]', pdcp_folder + '/dl-thr-map')
+        # plot_metric_map (results, 'avg throughput [bps]', pdcp_folder + '/dl-thr-map')
         plot_box (results, 'delay [s]', pdcp_folder + '/dl-delay-box')
 
         results = campaign.get_results_as_dataframe(read_ulPdcpStatsTrace,
@@ -194,7 +195,7 @@ for kittiModel in allParams ['kittiModel']:
         rlc_folder = figure_foder + "/rlc"
         Path(rlc_folder).mkdir(parents=True, exist_ok=True)
         plot_stat (results, 'end [s]', 'avg prr', rlc_folder + '/dl-prr', '-')
-        plot_stat (results, 'end [s]', 'avg throughput [bps]', rlc_folder + '/dl-thr', '-')
+        # plot_stat (results, 'end [s]', 'avg throughput [bps]', rlc_folder + '/dl-thr', '*')
         plot_stat (results, 'end [s]', 'delay [s]', rlc_folder + '/dl-delay', '-')
         plot_metric_map (results, 'delay [s]', rlc_folder + '/dl-delay-map')
         plot_metric_map (results, 'avg prr', rlc_folder + '/dl-prr-map')

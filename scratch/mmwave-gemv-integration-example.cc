@@ -71,6 +71,7 @@ main (int argc, char *argv[])
   std::string gemvTracesPath = "./input/bolognaLeftHalfRSU3_50vehicles_100sec/13-May-2021_";
   std::string appType = "kitti";
   uint32_t kittiModel = 1450;
+  double txPower = 30.0;
 
   CommandLine cmd;
   cmd.AddValue ("numUes", "Number of UE nodes", numUes);
@@ -84,6 +85,7 @@ main (int argc, char *argv[])
                 appTracesPath);
   cmd.AddValue ("applicationType", "Uplink application to install in the clients [classic, kitti].", appType);
   cmd.AddValue ("kittiModel", "Compression type [1450, 1451, 1452, 1150]", kittiModel);
+  cmd.AddValue ("txPower", "The vehicle tx power in dBm", txPower);
   cmd.Parse (argc, argv);
   
   Config::SetDefault ("ns3::MmWaveBearerStatsCalculator::AggregatedStats", BooleanValue (true));
@@ -95,6 +97,7 @@ main (int argc, char *argv[])
   Config::SetDefault ("ns3::UdpClient::PacketSize", UintegerValue (packetSizeBytes));
   Config::SetDefault ("ns3::MmWavePhyMacCommon::NumHarqProcess", UintegerValue (100));
   Config::SetDefault ("ns3::LteRlcAm::PollRetransmitTimer", TimeValue (MilliSeconds (100)));
+  Config::SetDefault ("ns3::MmWaveUePhy::TxPower", DoubleValue (txPower));
   
   Ptr<GemvPropagationLossModel> gemv = CreateObject<GemvPropagationLossModel> ();
   
