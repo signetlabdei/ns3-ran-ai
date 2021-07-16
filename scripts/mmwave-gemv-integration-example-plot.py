@@ -12,8 +12,8 @@ from math import ceil
 from mmwavePlotUtils import *
 from pathlib import Path
 from mpl_toolkits import mplot3d
-# pd.set_option("display.max_rows", 100000, "display.max_columns", 100000)
-# # Temporarily limit number of max cores used
+pd.set_option("display.max_rows", 100000, "display.max_columns", 100000)
+# Temporarily limit number of max cores used
 # sem.parallelrunner.MAX_PARALLEL_PROCESSES = 4
 
 def save_figure (fig, path):
@@ -116,10 +116,11 @@ for kittiModel in allParams ['kittiModel']:
     overall_list = sem.list_param_combinations(params_grid)
 
     # Use the parsing function to create a Pandas dataframe
-    phyPlots = True
-    appPlots = True
-    pdcpPlots = True
-    rlcPlots = True
+    phyPlots = False
+    appPlots = False
+    pdcpPlots = False
+    rlcPlots = False
+    load = True
 
     if (phyPlots):
         phy_folder = figure_foder + "/phy"
@@ -215,3 +216,14 @@ for kittiModel in allParams ['kittiModel']:
         plot_metric_map (results, 'avg prr', rlc_folder + '/ul-prr-map')
         plot_metric_map (results, 'avg throughput [bps]', rlc_folder + '/ul-thr-map')
         plot_box (results, 'delay [s]', rlc_folder + '/ul-delay-box')
+        
+    if (load):
+        load_folder = figure_foder + "/load"
+        Path(load_folder).mkdir(parents=True, exist_ok=True)
+        results = campaign.get_results_as_dataframe(calc_ofdm_sym,
+                                                    params=overall_list,
+                                                    verbose=True, 
+                                                    parallel_parsing=False)
+        available_sym = 100 * 4 * 12 # 100 subframes * 4 slots per sf * 12 data symbols
+        results ['load'] = results ['OFDM symbols'] / available_sym
+        plot_stat (results, 'Time [s]', 'load', load_folder + '/load', '-')

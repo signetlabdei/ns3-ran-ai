@@ -236,3 +236,48 @@ def sample_rxPacketTrace (result):
         sampledDf = sampledDf.append (group, ignore_index=True)
     
     return sampledDf.values.tolist ()
+
+"""
+    Read RxPacketTrace.txt trace file, parse it using a sampling time of 100 ms 
+    and return the number of OFDM symbols used in each time period. 
+    Can be used as input for the function get_results_as_dataframe provided by sem.
+    Args:
+        result (str): the content of RxPacketTrace.txt as a string
+"""
+@sem.utils.yields_multiple_results
+@sem.utils.output_labels(['Time [s]', 'OFDM symbols', 'Cell ID', 'RNTI', 
+                          'CC ID'])
+@sem.utils.only_load_some_files(r'.*RxPacketTrace.txt')
+def calc_ofdm_sym (result):    
+    data = []
+    df = pd.read_csv (StringIO (result ['output']['RxPacketTrace.txt']), 
+                      delimiter = "\t", index_col=False, 
+                      usecols = [0, 1, 6, 7, 8, 9], 
+                      names = ['UL/DL', 'Time [s]', 'OFDM symbols', 'Cell ID', 
+                               'RNTI', 'CC ID'], 
+                      dtype = {'mode' : 'object', 
+                               'Time [s]' : 'float', 
+                               'OFDM symbols' : 'int', 
+                               'Cell ID' : 'int', 
+                               'RNTI' : 'int', 
+                               'CC ID' : 'int'}, 
+                      engine='python', header=0)
+    
+    # Group the results, each group corresponds to a single user
+    grouper = df.groupby (['Cell ID', 'RNTI', 'CC ID'])
+    sampledDf = pd.DataFrame ()
+    
+    # For each user, resample the results and compute the number of OFDM symbols
+    # that have been used
+    for name, group in grouper: 
+        group ['Time [s]'] = pd.to_timedelta (group ['Time [s]'], unit='s')
+        group.set_index ('Time [s]', inplace=True)
+        
+        # Resample and aggregate the results using a sampling period of 100 ms
+        # In each sampling period, compute the overall number of OFDM symbols 
+        # that have been used 
+        d = {'OFDM symbols': 'sum', 'Cell ID': 'first', 'RNTI': 'first', 'CC ID': 'first'}
+        group = group.resample ("100ms").agg (d)
+        group.reset_index (inplace=True)
+        sampledDf = sampledDf.append (group, ignore_index=True)
+    return sampledDf.values.tolist ()
