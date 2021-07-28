@@ -1,108 +1,29 @@
 from mmwave_gemv_integration_campaigns import * 
+from mmwave_gemv_integration_example_utils import * 
+from mmwavePlotUtils import *
 import sem
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import matplotlib.colors as colors
-import pprint
-import seaborn as sns
 from io import StringIO
-from math import ceil
-from mmwavePlotUtils import *
 from pathlib import Path
 from mpl_toolkits import mplot3d
 pd.set_option("display.max_rows", 100000, "display.max_columns", 100000)
 # Temporarily limit number of max cores used
 # sem.parallelrunner.MAX_PARALLEL_PROCESSES = 4
 
-def save_figure (fig, path):
-    overwrite = True
-    plt.figure (fig.number)
-    if overwrite == False and Path (path).exists():
-        input ("File already exists, overwrite?")
-    pdf = PdfPages(path)
-    pdf.savefig()
-    pdf.close()
-    plt.close ()
-    
-def plot_stat (results, xMetric, yMetric, figName, style='-'):
-    num_cols = 5
-    num_plots = len (results ['firstVehicleIndex'].unique ())
-    num_rows = ceil (num_plots / num_cols)
-    fig, ax = plt.subplots (num_rows, num_cols, figsize=(7*num_rows, 9*num_cols), 
-                            squeeze=False)
-    
-    for i in results ['firstVehicleIndex'].unique ():
-        x = results [(results ['firstVehicleIndex'] == i)][xMetric]
-        y = results [(results ['firstVehicleIndex'] == i)][yMetric]
-        row_index = int (i / num_cols)
-        col_index = i % num_cols
-        ax [row_index, col_index].plot (x, y, style)
-        ax [row_index, col_index].grid ()
-        ax [row_index, col_index].set_title('Vehicle ' + str (i))
-        ax [row_index, col_index].set_xlabel (xMetric)
-        ax [row_index, col_index].set_ylabel (yMetric)
-        if (yMetric == 'avg prr' or yMetric == 'avg throughput [bps]' or yMetric == 'delay [s]'):
-            ax [row_index, col_index].set_ylim (bottom=0, top=max (y)*1.1)
-    fig.tight_layout ()
-    save_figure (fig, figName + '.pdf')
-    
-
-def map_position_to_metric (vehicleIndex, rlcOrPdcpStat, metric):
-    mobilityPath = "input/bolognaLeftHalfRSU3_50vehicles_100sec/mobility/nodes/"
-    mobilityDf = pd.read_csv (mobilityPath + "node-" + str (vehicleIndex) + ".txt", 
-                              header=None, delimiter=" ", names=['time [s]', 'x', 'y']) 
-    rlcOrPdcpStat = rlcOrPdcpStat [(rlcOrPdcpStat ['firstVehicleIndex'] == vehicleIndex)][['start [s]','end [s]', metric]]
-    x = []
-    y = []
-    z = []
-    for index, row in mobilityDf.iterrows ():
-        values = rlcOrPdcpStat [(row ['time [s]'] >= rlcOrPdcpStat ['start [s]']) &
-                                (row ['time [s]'] < rlcOrPdcpStat ['end [s]'])] [metric].values
-        if (len (values) == 0):
-            continue
-        if (len (values) > 1):
-            print (rlcOrPdcpStat [(row ['time [s]'] >= rlcOrPdcpStat ['start [s]']) &
-                                    (row ['time [s]'] < rlcOrPdcpStat ['end [s]'])])
-            print ("Error: more than 1 delay value")
-            exit ()
-        x += [float (row ['x'])]
-        y += [float (row ['y'])]
-        z += [float (values [0])]
-    return x,y,z
-    
-def plot_metric_map (rlcOrPdcpResult, metric, figName, gamma=0.5):
-    fig, ax = plt.subplots (1, 1)
-    ax.grid ()
-    allXYZ = pd.DataFrame ()
-    for i in results ['firstVehicleIndex'].unique ():
-        (x, y, z) = map_position_to_metric (i, rlcOrPdcpResult, metric)
-        data = {'x' : x, 'y' : y, metric : z}
-        allXYZ = allXYZ.append (pd.DataFrame (data), ignore_index=True)
-
-    allXYZ = allXYZ.groupby (['x', 'y'], as_index=False).mean ()
-    vMax = max (allXYZ [metric])
-    if (metric == 'avg prr'):
-        vMax = 1
-    im = ax.scatter (allXYZ ['x'], allXYZ ['y'], c=allXYZ [metric], s=0.7,
-                     norm=colors.PowerNorm(gamma=gamma), cmap="rainbow", 
-                     vmin=0, vmax=vMax)
-    ax.set_xlim ([11.310, 11.3215])
-    ax.set_ylim ([44.491, 44.4975])
-    ax.ticklabel_format(useOffset=False)
-    fig.colorbar (im, ax=ax)
-    plt.title (metric)
-    save_figure (fig, figName + '.pdf')
-    
-def plot_box (rlcOrPdcpResult, metric, figName):
-    fig, ax = plt.subplots (1, 1)
-    ax.grid ()
-    ax.violinplot (rlcOrPdcpResult [metric], showmeans=True)
-    ax.set_ylabel (metric)
-    save_figure (fig, figName + '.pdf')
-    
+# name of the simulation campaign
 campaignName = 'campaign-2'
+
+# enable/disable plots
+phyPlots = False
+appPlots = False
+pdcpPlots = False
+rlcPlots = False
+load = True
+
 (ns_path, ns_script, ns_res_path, 
 allParams, base_figure_foder) = get_campaign_params (campaignName)
 for kittiModel in allParams ['kittiModel']:
@@ -114,13 +35,6 @@ for kittiModel in allParams ['kittiModel']:
 
     campaign = sem.CampaignManager.load (campaign_dir=ns_res_path)
     overall_list = sem.list_param_combinations(params_grid)
-
-    # Use the parsing function to create a Pandas dataframe
-    phyPlots = False
-    appPlots = False
-    pdcpPlots = False
-    rlcPlots = False
-    load = True
 
     if (phyPlots):
         phy_folder = figure_foder + "/phy"

@@ -1,3 +1,19 @@
+"""
+This files defines the parameters of each simulation campaign. 
+"""
+
+"""
+Returns the parameters of a certain simulation campaign
+
+Params:
+    - campaignName: the name of the simulation campaign
+Return:
+    - ns_path: the path to the ns-3 root folder
+    - ns_script: the name of the simulation script
+    - ns_res_path: the path to the simulation results
+    - params_grid: dictionary containing the simulation params
+    - figure_path: the path to the figures folder
+"""
 def get_campaign_params (campaignName):
     ns_path = './'
     ns_script = 'mmwave-gemv-integration-example'
