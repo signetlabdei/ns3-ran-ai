@@ -7,7 +7,7 @@
 #     conf.check_nonfatal(header_name='stdint.h', define_name='HAVE_STDINT_H')
 
 def build(bld):
-    module = bld.create_ns3_module('mmwave', ['core','network', 'spectrum', 'virtual-net-device','point-to-point','applications','internet', 'lte', 'propagation'])
+    module = bld.create_ns3_module('mmwave', ['ns3-ai','core','network', 'spectrum', 'virtual-net-device','point-to-point','applications','internet', 'lte', 'propagation'])
     module.source = [
         'helper/mmwave-helper.cc',
         'helper/mmwave-phy-trace.cc',
@@ -67,7 +67,8 @@ def build(bld):
         'model/error-model/mmwave-eesm-ir-t2.cc',
         'model/error-model/mmwave-eesm-ir.cc',
         'model/error-model/mmwave-eesm-t1.cc',
-        'model/error-model/mmwave-eesm-t2.cc'
+        'model/error-model/mmwave-eesm-t2.cc',
+        'model/ran-ai.cc'
         #'model/mmwave-enb-cmac-sap.cc',
         #'model/mmwave-enb-rrc.cc',
         #'model/mmwave-mac-sap.cc',
@@ -153,6 +154,7 @@ def build(bld):
         'model/error-model/mmwave-eesm-t2.h',
         'model/gemv-propagation-loss-model.h',
         'model/gemv-tag.h',
+        'model/ran-ai.h'
         #'model/mmwave-enb-cmac-sap.h',
         #'model/mmwave-enb-rrc.h',
         #'model/mmwave-mac-sap.h',

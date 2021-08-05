@@ -252,7 +252,12 @@ MmWaveHelper::GetTypeId (void)
                    UintegerValue (1),
                    MakeUintegerAccessor (&MmWaveHelper::m_noOfLteCcs),
                    MakeUintegerChecker<uint16_t> (MIN_NO_CC, MAX_NO_CC))
-  ;
+    .AddAttribute ("InstallRanAI",
+                   "If true, a RAN-AI entity is installed in the eNB."
+                   "If false, nothing changes from the usual behavior.",
+                   BooleanValue (false), 
+                   MakeBooleanAccessor (&MmWaveHelper::m_installRanAI),
+                   MakeBooleanChecker ());
 
   return tid;
 }
@@ -3093,6 +3098,12 @@ MmWaveHelper::InstallSingleSub6EnbDevice (Ptr<Node> n)
 
     }
 
+
+  if (m_installRanAI)
+  {
+    int memBlockKey = 2333; ///< memory block key, need to keep the same in the python script
+    device->InstallRanAI(memBlockKey, GetRlcStats(), GetPdcpStats());
+  }
   return device;
 }
 

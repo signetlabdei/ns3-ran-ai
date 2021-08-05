@@ -422,6 +422,7 @@ private:
   bool m_rlcAmEnabled;
   bool m_snrTest;
   bool m_useIdealRrc;       // Initialized as true in the constructor
+  bool m_installRanAI;      // Initialized as false in the constructor
 
   Ptr<MmWaveBearerStatsCalculator> m_rlcStats;
   Ptr<MmWaveBearerStatsCalculator> m_pdcpStats;

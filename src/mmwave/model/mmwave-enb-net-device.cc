@@ -51,6 +51,8 @@
 #include <ns3/log.h>
 #include <ns3/lte-enb-component-carrier-manager.h>
 #include <ns3/mmwave-component-carrier-enb.h>
+#include <ns3/ran-ai.h>
+#include <ns3/mmwave-bearer-stats-calculator.h>
 
 namespace ns3 {
 
@@ -266,6 +268,28 @@ MmWaveEnbNetDevice::SetCcMap (std::map< uint8_t, Ptr<MmWaveComponentCarrier> > c
 {
   NS_ASSERT_MSG (!m_isConfigured, "attempt to set CC map after configuration");
   m_ccMap = ccm;
+}
+
+void
+MmWaveEnbNetDevice::InstallRanAI (int memBlockKey, Ptr<MmWaveBearerStatsCalculator> rlcStats, Ptr<MmWaveBearerStatsCalculator> pdcpStats)
+{
+  NS_LOG_DEBUG("Install RAN-AI entity on the eNB");
+
+  // Create an instance of the RAN-AI entity and schedule the periodic status update
+  // Use the bearer status calculator already available, for the collection of metrics at RLC and PDCP
+  
+  m_ranAI = Create<RanAI>(memBlockKey);
+  Simulator::Schedule (MilliSeconds(10), &MmWaveEnbNetDevice::SendStatusUpdate, this, rlcStats, pdcpStats);
+}
+
+void
+MmWaveEnbNetDevice::SendStatusUpdate (Ptr<MmWaveBearerStatsCalculator> rlcStats, Ptr<MmWaveBearerStatsCalculator> pdcpStats)
+{
+  NS_LOG_DEBUG ("Send update to the RL agent");
+
+  // TODO with info available at the calculators, create the data structures for python 
+  m_ranAI->ReportMeasures (10);
+  Simulator::Schedule (MilliSeconds (500), &MmWaveEnbNetDevice::SendStatusUpdate, this, rlcStats, pdcpStats);
 }
 
 }

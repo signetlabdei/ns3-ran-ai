@@ -46,7 +46,8 @@
 #include <vector>
 #include <map>
 #include <ns3/lte-enb-rrc.h>
-
+#include <ns3/ran-ai.h>
+#include <ns3/mmwave-bearer-stats-calculator.h>
 
 namespace ns3 {
 /* Add forward declarations here */
@@ -93,6 +94,10 @@ public:
 
   void SetCcMap (std::map< uint8_t, Ptr<MmWaveComponentCarrier> > ccm) override;
 
+  void InstallRanAI (int memBlockKey, Ptr<MmWaveBearerStatsCalculator> rlcStats, Ptr<MmWaveBearerStatsCalculator> pdcpStats);
+
+  void SendStatusUpdate (Ptr<MmWaveBearerStatsCalculator> rlcStats, Ptr<MmWaveBearerStatsCalculator> pdcpStats);
+
 protected:
   virtual void DoInitialize (void) override;
   void UpdateConfig ();
@@ -110,6 +115,8 @@ private:
   Ptr<LteEnbComponentCarrierManager> m_componentCarrierManager; ///< the component carrier manager of this eNb
 
   bool m_isConfigured;
+
+  Ptr<RanAI> m_ranAI;
 
 };
 }
