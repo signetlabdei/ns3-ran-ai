@@ -3,6 +3,11 @@
 *.patch
 *.rej
 
+scratch/ran-ai/output
+
+.idea
+*.txt
+
 *.DS_Store
 
 *.o

@@ -71,9 +71,23 @@ BurstyAppStatsCalculator::GetTypeId (void)
                                              &BurstyAppStatsCalculator::GetOutputFilename),
                          MakeStringChecker ())
           .AddAttribute ("AggregatedStats",
-                         "Choice to show the results aggregated of disaggregated. As of now, non-aggregated stats are not supported",
+                         "Choice to show the results aggregated of disaggregated. As of now, "
+                         "non-aggregated stats are not supported",
                          BooleanValue (true),
                          MakeBooleanAccessor (&BurstyAppStatsCalculator::m_aggregatedStats),
+                         MakeBooleanChecker ())
+          .AddAttribute ("ManualUpdate",
+                         "Choice to perform manual statistics update, i.e., triggered by an "
+                         "outside class such as a RAN-AI.",
+                         BooleanValue (false),
+                         MakeBooleanAccessor (&BurstyAppStatsCalculator::GetManualUpdate,
+                                              &BurstyAppStatsCalculator::SetManualUpdate),
+                         MakeBooleanChecker ())
+          .AddAttribute ("WriteToFile",
+                         "Choice to write stats to file besides computing thaem and exchange them "
+                         "with external classes",
+                         BooleanValue (false),
+                         MakeBooleanAccessor (&BurstyAppStatsCalculator::m_writeToFile),
                          MakeBooleanChecker ());
   return tid;
 }
@@ -117,11 +131,31 @@ BurstyAppStatsCalculator::GetEpoch () const
 }
 
 void
+BurstyAppStatsCalculator::SetManualUpdate (bool u)
+{
+  NS_LOG_FUNCTION (this);
+  m_manualUpdate = u;
+  if (m_manualUpdate)
+    {
+      NS_LOG_UNCOND ("Cancel EndEpoch event");
+      m_endEpochEvent.Cancel ();
+    }
+}
+
+bool
+BurstyAppStatsCalculator::GetManualUpdate () const
+{
+  NS_LOG_FUNCTION (this);
+  return m_manualUpdate;
+}
+
+void
 BurstyAppStatsCalculator::TxBurst (uint32_t nodeId, Ptr<const Packet> burst, const Address &from, const Address &to, const SeqTsSizeFragHeader &header)
 {
   NS_LOG_FUNCTION(this << " TxBurst nodeId=" << nodeId << " burst seq=" << header.GetSeq () << " of " << header.GetSize ()
                                      << " bytes transmitted at " << std::setprecision (9)
                                      << header.GetTs ().As (Time::S));
+
   if (m_aggregatedStats)
     {
       if (Simulator::Now () >= m_startTime)
@@ -158,6 +192,62 @@ BurstyAppStatsCalculator::RxBurst (uint32_t nodeId, Ptr<const Packet> burst, con
         }
       m_pendingOutput = true;
     }
+}
+
+std::map<uint16_t, AppResults>
+BurstyAppStatsCalculator::ReadResults (void)
+{
+  NS_LOG_FUNCTION (this);
+
+  // Get the list of node IDs
+  std::vector<uint32_t> nodeIdsVector;
+  for (auto it = m_txBursts.begin (); it != m_txBursts.end (); ++it)
+    {
+      if (find (nodeIdsVector.begin (), nodeIdsVector.end (), (*it).first) == nodeIdsVector.end ())
+        {
+          nodeIdsVector.push_back ((*it).first);
+        }
+    }
+
+  std::map<uint16_t, AppResults> results;
+  for (auto it = nodeIdsVector.begin (); it != nodeIdsVector.end ();
+       ++it)
+    {
+      AppResults item;
+      uint32_t nodeId = *it;
+      item.imsi = nodeId;
+
+      item.txBursts =  m_txBursts[nodeId];
+      item.txData = m_txData[nodeId];
+
+      item.rxBursts = m_rxBursts[nodeId];
+      item.rxData = m_rxData[nodeId];
+
+      auto iter = m_delay.find (nodeId);
+
+      // if no delay info have been recorded yet, put it to zero
+      if (iter == m_delay.end ())
+        {
+          item.delayMean = 0.0;
+          item.delayStdev = 0.0;
+          item.delayMin = 0.0;
+          item.delayMax = 0.0;
+        }
+      else
+        {
+          item.delayMean = m_delay[nodeId]->getMean ();
+          item.delayStdev = m_delay[nodeId]->getStddev ();
+          item.delayMin = m_delay[nodeId]->getMin ();
+          item.delayMax = m_delay[nodeId]->getMax ();
+        }
+      results.insert (std::make_pair (item.imsi, item));
+    }
+  if (m_writeToFile)
+  {
+    ShowResults ();
+  }
+  ResetResults ();
+  return results;
 }
 
 void
@@ -208,7 +298,16 @@ BurstyAppStatsCalculator::WriteResults (std::ofstream &outFile)
         }
     }
 
-  Time endTime = m_startTime + m_epochDuration;
+  Time endTime;
+  if (m_manualUpdate)
+    {
+      endTime = Simulator::Now ();
+    }
+  else
+    {
+      endTime = m_startTime + m_epochDuration;
+    }
+
   for (auto it = nodeIdsVector.begin (); it != nodeIdsVector.end ();
        ++it)
     {

@@ -56,6 +56,22 @@ typedef std::map<ImsiLcidPair_t, double> DoubleMap;
 /// Container: (IMSI, LCID) pair, LteFlowId_t
 typedef std::map<ImsiLcidPair_t, LteFlowId_t> FlowIdMap;
 
+struct UlDlResults
+  {
+    uint16_t cellId;
+    uint16_t imsi;
+    uint16_t rnti;
+    uint16_t lcid;
+    uint16_t txPackets;
+    uint32_t txData;
+    uint16_t rxPackets;
+    uint32_t rxData;
+    double delayMean;
+    double delayStdev;
+    double delayMin;
+    double delayMax;
+  };
+
 /**
  * \ingroup lte
  *
@@ -165,6 +181,18 @@ public:
    * \return the epoch duration
    */
   Time GetEpoch () const;
+
+  /**
+   *
+   * \param u set the update mode (true if manual, automatic otherwise)
+   */
+  void SetManualUpdate (bool u);
+
+  /**
+   *
+   * \return whether the update is manual or not 
+   */
+  bool GetManualUpdate () const;
 
   /**
    * Notifies the stats calculator that an uplink transmission has occurred.
@@ -355,38 +383,50 @@ public:
    */
   std::vector<double>
   GetDlPduSizeStats (uint64_t imsi, uint8_t lcid);
+  
+  /**
+   * Read dowlink statistics associated to a specific cellId
+   */
+  std::map<uint16_t, UlDlResults> ReadDlResults (uint16_t cellId);
+
+  /**
+   * Read dowlink statistics associated to a specific cellId
+   */
+  std::map<uint16_t, UlDlResults> ReadUlResults (uint16_t cellId);
 
 private:
-  /**
-   * Called after each epoch to write collected
-   * statistics to output files. During first call
-   * it opens output files and write columns descriptions.
-   * During next calls it opens output files in append mode.
-   */
-  void
-  ShowResults (void);
 
   /**
    * Writes collected statistics to UL output file and
    * closes UL output file.
-   * @param outFile ofstream for UL statistics
    */
   void
-  WriteUlResults (std::ofstream& outFile);
+  WriteUlResults ();
 
   /**
    * Writes collected statistics to DL output file and
    * closes DL output file.
-   * @param outFile ofstream for DL statistics
    */
   void
-  WriteDlResults (std::ofstream& outFile);
+  WriteDlResults ();
 
   /**
    * Erases collected statistics
    */
   void
   ResetResults (void);
+
+  /**
+   * Erases DL collected statistics
+   */
+  void 
+  ResetDlResults (void);
+
+  /**
+   * Erases UL collected statistics
+   */
+  void 
+  ResetUlResults (void);
 
   /**
    * Reschedules EndEpoch event. Usually used after
@@ -432,19 +472,39 @@ private:
   Time m_epochDuration;
 
   /**
-   * true if output files have not been opened yet
+   * true if UL output file have not been opened yet
    */
-  bool m_firstWrite;
+  bool m_firstWriteUl;
 
   /**
-   * true if any output is pending
+   * true if DL output file have not been opened yet
    */
-  bool m_pendingOutput;
-  
+  bool m_firstWriteDl;
+
+  /**
+   * true if Ul output is pending
+   */
+  bool m_pendingOutputUl;
+
+  /**
+   * true if Dl output is pending
+   */
+  bool m_pendingOutputDl;
+
   /**
    * true if results are shown aggregated
    */
   bool m_aggregatedStats;
+
+  /**
+   * true if update is triggered by external entity (such as RAN-AI)
+   */
+  bool m_manualUpdate;
+
+  /**
+   * determine if the traces must be output to file or just evaluated and exchanged with external classes
+   */
+  bool m_writeToFile;
 
   /**
    * Protocol type, by default RLC

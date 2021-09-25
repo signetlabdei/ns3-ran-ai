@@ -251,14 +251,7 @@ MmWaveHelper::GetTypeId (void)
                    "If it is more than one and m_lteUseCa is false, it will raise an error ",
                    UintegerValue (1),
                    MakeUintegerAccessor (&MmWaveHelper::m_noOfLteCcs),
-                   MakeUintegerChecker<uint16_t> (MIN_NO_CC, MAX_NO_CC))
-    .AddAttribute ("InstallRanAI",
-                   "If true, a RAN-AI entity is installed in the eNB."
-                   "If false, nothing changes from the usual behavior.",
-                   BooleanValue (false), 
-                   MakeBooleanAccessor (&MmWaveHelper::m_installRanAI),
-                   MakeBooleanChecker ());
-
+                   MakeUintegerChecker<uint16_t> (MIN_NO_CC, MAX_NO_CC));
   return tid;
 }
 
@@ -2717,6 +2710,7 @@ MmWaveHelper::EnableDlPhyTrace (void)
   // MC ue device
   Config::ConnectFailSafe ("/NodeList/*/DeviceList/*/MmWaveComponentCarrierMapUe/*/MmWaveUePhy/DlSpectrumPhy/RxPacketTraceUe",
                      MakeBoundCallback (&MmWavePhyTrace::RxPacketTraceUeCallback, m_phyStats));
+
 }
 
 void
@@ -3098,13 +3092,23 @@ MmWaveHelper::InstallSingleSub6EnbDevice (Ptr<Node> n)
 
     }
 
-
-  if (m_installRanAI)
-  {
-    int memBlockKey = 2333; ///< memory block key, need to keep the same in the python script
-    device->InstallRanAI(memBlockKey, GetRlcStats(), GetPdcpStats());
-  }
   return device;
+}
+
+void
+MmWaveHelper::InstallRanAI (NetDeviceContainer devices, std::map<uint16_t, Ptr<Application>> imsiApplication, Ptr<BurstyAppStatsCalculator> appStats)
+{
+  int memBlockKey = 2333; ///< memory block key, need to keep the same in the python script
+  
+  for (auto dev = devices.Begin (); dev != devices.End (); ++dev)
+  {
+    DynamicCast<MmWaveEnbNetDevice>(*dev)->InstallRanAI(memBlockKey, GetRlcStats(), GetPdcpStats(), imsiApplication, appStats);
+
+    // Connect traces for get information on PHY metrics
+    // TODO make it device dependant, i.i., each eNB gets info only on its PHY
+    Config::ConnectFailSafe ("/NodeList/*/DeviceList/*/ComponentCarrierMap/*/MmWaveEnbPhy/DlSpectrumPhy/RxPacketTraceEnb",
+                     MakeCallback (&MmWaveEnbNetDevice::RxPacketTraceEnbCallback, DynamicCast<MmWaveEnbNetDevice>(*dev)));
+  }
 }
 
 NetDeviceContainer

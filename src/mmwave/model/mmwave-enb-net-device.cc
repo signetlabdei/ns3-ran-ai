@@ -53,6 +53,12 @@
 #include <ns3/mmwave-component-carrier-enb.h>
 #include <ns3/ran-ai.h>
 #include <ns3/mmwave-bearer-stats-calculator.h>
+#include <ns3/mmwave-phy-trace.h>
+#include <numeric>
+#include <ns3/application.h>
+#include <ns3/bursty-application.h>
+#include <ns3/kitti-trace-burst-generator.h>
+#include <ns3/bursty-app-stats-calculator.h>
 
 namespace ns3 {
 
@@ -84,6 +90,11 @@ TypeId MmWaveEnbNetDevice::GetTypeId ()
                    UintegerValue (0),
                    MakeUintegerAccessor (&MmWaveEnbNetDevice::m_cellId),
                    MakeUintegerChecker<uint16_t> ())
+    .AddAttribute ("StatusUpdate",
+                   "Periodicity of the RAN-AI status update",
+                   TimeValue (MilliSeconds (100)),
+                   MakeTimeAccessor (&MmWaveEnbNetDevice::m_statusUpdate),
+                   MakeTimeChecker ())
   ;
   return tid;
 }
@@ -271,25 +282,150 @@ MmWaveEnbNetDevice::SetCcMap (std::map< uint8_t, Ptr<MmWaveComponentCarrier> > c
 }
 
 void
-MmWaveEnbNetDevice::InstallRanAI (int memBlockKey, Ptr<MmWaveBearerStatsCalculator> rlcStats, Ptr<MmWaveBearerStatsCalculator> pdcpStats)
+MmWaveEnbNetDevice::InstallRanAI (int memBlockKey, Ptr<MmWaveBearerStatsCalculator> rlcStats, 
+Ptr<MmWaveBearerStatsCalculator> pdcpStats, 
+std::map<uint16_t, Ptr<Application>> imsiApplication,
+Ptr<BurstyAppStatsCalculator> appStats)
 {
   NS_LOG_DEBUG("Install RAN-AI entity on the eNB");
 
   // Create an instance of the RAN-AI entity and schedule the periodic status update
-  // Use the bearer status calculator already available, for the collection of metrics at RLC and PDCP
-  
   m_ranAI = Create<RanAI>(memBlockKey);
-  Simulator::Schedule (MilliSeconds(10), &MmWaveEnbNetDevice::SendStatusUpdate, this, rlcStats, pdcpStats);
+  m_rlcStats = rlcStats;
+  m_pdcpStats = pdcpStats;
+  m_imsiApp = imsiApplication;
+  m_appStats = appStats;
+
+  // Use the bearer status calculator already available, for the collection of metrics at RLC and PDCP
+  Simulator::Schedule (m_statusUpdate, &MmWaveEnbNetDevice::SendStatusUpdate, this);
 }
 
 void
-MmWaveEnbNetDevice::SendStatusUpdate (Ptr<MmWaveBearerStatsCalculator> rlcStats, Ptr<MmWaveBearerStatsCalculator> pdcpStats)
+MmWaveEnbNetDevice::RxPacketTraceEnbCallback (std::string path, RxPacketTraceParams params)
+{
+  NS_LOG_FUNCTION(this);
+
+  uint64_t imsi = m_rrc->GetImsiFromRnti(params.m_rnti);
+
+  // Find if there is an SINR history associated to this IMSI
+  // if not, create one.  If there is one for SINR, there must be also for symbols and MCS, 
+  // so there is no need for distinct if-else
+  
+  auto it = m_sinrHistory.find(imsi);
+  if (it != m_sinrHistory.end())
+  {
+    it->second.push_back (10 * std::log10 (params.m_sinr));
+    
+    auto it2 = m_symbolsHistory.find (imsi);
+    it2->second.push_back (params.m_numSym);
+    
+    auto it3 = m_mcsHistory.find (imsi);
+    it3->second.push_back (params.m_mcs);
+  }
+  else
+  {
+    std::vector<double> sinr;
+    sinr.push_back (10 * std::log10 (params.m_sinr));
+    m_sinrHistory.insert(std::make_pair(imsi, sinr));
+    
+    std::vector<double> symbols;
+    symbols.push_back (params.m_numSym);
+    m_symbolsHistory.insert (std::make_pair (imsi, symbols));
+    
+    std::vector<double> mcs;
+    mcs.push_back (params.m_mcs);
+    m_mcsHistory.insert (std::make_pair (imsi, mcs));
+  }
+
+}
+
+void
+MmWaveEnbNetDevice::SendStatusUpdate ()
 {
   NS_LOG_DEBUG ("Send update to the RL agent");
 
-  // TODO with info available at the calculators, create the data structures for python 
-  m_ranAI->ReportMeasures (10);
-  Simulator::Schedule (MilliSeconds (500), &MmWaveEnbNetDevice::SendStatusUpdate, this, rlcStats, pdcpStats);
+  // Retrieve all RLC and PDCP stats collected for this eNB
+  std::map<uint16_t, UlDlResults> rlcResults = m_rlcStats->ReadUlResults (m_cellId);
+  std::map<uint16_t, UlDlResults> pdcpResults = m_pdcpStats->ReadUlResults (m_cellId);
+
+  // Read also DL results to trigger writing on traces
+  m_rlcStats->ReadDlResults (m_cellId);
+  m_pdcpStats->ReadDlResults (m_cellId);
+
+  std::map<uint16_t, AppResults> appResults = m_appStats->ReadResults ();
+
+  // Send to the RAN-AI information about **each user**, in order to get the associated action
+  for (auto it = rlcResults.begin (); it != rlcResults.end (); it++)
+    {
+      auto itPdcp = pdcpResults.find(it->first);
+      if (itPdcp != pdcpResults.end())
+      {
+        // Read sinr values collected since last update, evaluate the mean and clear the vector for the following update window 
+        auto itSinr = m_sinrHistory.find(it->first);
+        if (itSinr == m_sinrHistory.end())
+        {
+          NS_LOG_WARN ("There isn't an SINR history associated to IMSI " << it->first);
+        }
+        double sinrMean = std::accumulate (itSinr->second.begin (), itSinr->second.end (), 0.0) / itSinr->second.size ();
+        itSinr->second.erase (itSinr->second.begin (), itSinr->second.end ());
+
+        // Read number of symbols used by this user, on average since last update; then, evaluate the mean and clear the vector for the following update window
+        auto itSymbols = m_symbolsHistory.find(it->first);
+        if (itSymbols == m_symbolsHistory.end ())
+          {
+            NS_LOG_WARN ("There isn't an history of used symbols associated to IMSI " << it->first);
+          }
+        
+        double symbolsMean = 0;
+        if (itSymbols->second.size () > 0)
+          {
+            symbolsMean = std::accumulate (itSymbols->second.begin (), itSymbols->second.end (), 0.0) / itSymbols->second.size ();
+            itSymbols->second.erase (itSymbols->second.begin (), itSymbols->second.end ());
+          }
+
+        // Read number of symbols used by this user, on average since last update; then, evaluate the mean and clear the vector for the following update window
+        auto itMcs = m_mcsHistory.find(it->first);
+        if (itMcs == m_mcsHistory.end ())
+          {
+            NS_LOG_WARN ("There isn't an history of used MCSs associated to IMSI " << it->first);
+          }
+
+        double mcs = 0;
+        if (itMcs->second.size () > 0)
+          {
+            mcs = std::accumulate (itMcs->second.begin (), itMcs->second.end (), 0.0) / itMcs->second.size ();
+            itMcs->second.erase (itMcs->second.begin (), itMcs->second.end ());
+          }
+
+        // Read stats from the application corresponding to this IMSI
+        auto itApp = appResults.find(it->first);
+        if (itApp == appResults.end ())
+          {
+            NS_LOG_WARN ("There isn't any APP information associated to IMSI " << it->first);
+          }
+        // TODO need to check if we are collecting information on the same IMSI at each level
+        NS_LOG_UNCOND("IMSI checker " << " " << it->first << " " << itPdcp->first << " " << itSinr->first << " " << itSymbols->first << " " << itApp->second.imsi);
+
+        // Report measure window and get the associated action
+        uint16_t action = m_ranAI->ReportMeasures (mcs, symbolsMean, sinrMean, it->second, itPdcp->second, itApp->second);
+        
+        // Retrieve pointer to application associated to IMSI
+        auto app = m_imsiApp.find(it->first);
+        Ptr<BurstyApplication> bursty = (app->second)->GetObject<BurstyApplication>();
+
+        // Propagate the action to the application associated to this IMSI
+        Ptr<KittiTraceBurstGenerator> burstGenerator = DynamicCast<KittiTraceBurstGenerator> (DynamicCast<BurstyApplication> (app->second)->GetBurstGenerator ());
+        NS_LOG_DEBUG ("Action is set to " << action << " for IMSI " << it->first);
+        burstGenerator->SetModel(action);
+      }
+      else
+      {
+        NS_LOG_WARN ("There should be a PDCP trace for this IMSI, please check.");
+      }
+    }
+  
+  // Schedule next status update
+  Simulator::Schedule (m_statusUpdate, &MmWaveEnbNetDevice::SendStatusUpdate, this);
 }
 
 }

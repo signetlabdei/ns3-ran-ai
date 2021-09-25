@@ -48,6 +48,9 @@
 #include <ns3/lte-enb-rrc.h>
 #include <ns3/ran-ai.h>
 #include <ns3/mmwave-bearer-stats-calculator.h>
+#include <ns3/mmwave-phy-trace.h>
+#include <ns3/application.h>
+#include "ns3/bursty-app-stats-calculator.h"
 
 namespace ns3 {
 /* Add forward declarations here */
@@ -94,9 +97,27 @@ public:
 
   void SetCcMap (std::map< uint8_t, Ptr<MmWaveComponentCarrier> > ccm) override;
 
-  void InstallRanAI (int memBlockKey, Ptr<MmWaveBearerStatsCalculator> rlcStats, Ptr<MmWaveBearerStatsCalculator> pdcpStats);
+  /** Install the RAN AI entity
+   * \param memBlockKey ID of the memory block used to interact with python
+   * \param rlcStats pointer to MmWaveBearerStatsCalculator used to retrieve RLC statististics
+   * \param pdcpStats pointer to MmWaveBearerStatsCalculator used to retrieve PDCP statististics
+   * \param imsiApplication map containing pointers to applications installed in UEs, used to configure the APP behavior depending on RAN AI decisions
+   * \param appStats pointer to BurstyAppStatsCalculator used to retried APP statistics
+  */
+  void InstallRanAI (int memBlockKey, Ptr<MmWaveBearerStatsCalculator> rlcStats,
+                     Ptr<MmWaveBearerStatsCalculator> pdcpStats,
+                     std::map<uint16_t, Ptr<Application>> imsiApplication,
+                     Ptr<BurstyAppStatsCalculator> appStats);
 
-  void SendStatusUpdate (Ptr<MmWaveBearerStatsCalculator> rlcStats, Ptr<MmWaveBearerStatsCalculator> pdcpStats);
+  /** 
+   * Send update on the cell status to the RAN-AI installed on this eNB 
+  */
+  void SendStatusUpdate ();
+
+  /** 
+   * Callback to PHY layer trace  
+  */
+  void RxPacketTraceEnbCallback (std::string path, RxPacketTraceParams params);
 
 protected:
   virtual void DoInitialize (void) override;
@@ -116,8 +137,19 @@ private:
 
   bool m_isConfigured;
 
-  Ptr<RanAI> m_ranAI;
+  Ptr<RanAI> m_ranAI; ///< pointer to RAN-AI entity installed in this eNB
 
+  std::map<uint64_t, std::vector<double>> m_symbolsHistory; ///< vector of symbols used in the specific time window associated to IMSI
+  std::map<uint64_t, std::vector<double>> m_sinrHistory; ///< vector of SINR samples collected in the specific time window associated to IMSI
+  std::map<uint64_t, std::vector<double>> m_mcsHistory; ///< vector of MCS samples collected in the specific time window associated to IMSI
+
+  std::map<uint16_t, Ptr<Application>> m_imsiApp; ///< map associating the user IMSI to a pointer to the installed application
+
+  Ptr<MmWaveBearerStatsCalculator> m_rlcStats; ///< pointer to an instance of the MmWaveBearerStatsCalculator linked to RLC
+  Ptr<MmWaveBearerStatsCalculator> m_pdcpStats; ///< pointer to an instance of the MmWaveBearerStatsCalculator linked to 
+  Ptr<BurstyAppStatsCalculator> m_appStats; ///< pointer to an instance of the BurstyApp stats calculator
+
+  Time m_statusUpdate; ///< periodicity of the RAN-AI status update
 };
 }
 }

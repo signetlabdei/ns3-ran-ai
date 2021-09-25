@@ -47,8 +47,10 @@ namespace mmwave {
 NS_OBJECT_ENSURE_REGISTERED ( MmWaveBearerStatsCalculator);
 
 MmWaveBearerStatsCalculator::MmWaveBearerStatsCalculator ()
-  : m_firstWrite (true),
-    m_pendingOutput (false),
+  : m_firstWriteUl (true),
+    m_firstWriteDl (true),
+    m_pendingOutputUl (false),
+    m_pendingOutputDl (false),
     m_aggregatedStats (true),
     m_protocolType ("RLC")
 {
@@ -56,8 +58,10 @@ MmWaveBearerStatsCalculator::MmWaveBearerStatsCalculator ()
 }
 
 MmWaveBearerStatsCalculator::MmWaveBearerStatsCalculator (std::string protocolType)
-  : m_firstWrite (true),
-    m_pendingOutput (false),
+  : m_firstWriteUl (true),
+    m_firstWriteDl (true),
+    m_pendingOutputUl (false),
+    m_pendingOutputDl (false),
     m_aggregatedStats (true)
 {
   NS_LOG_FUNCTION (this);
@@ -111,7 +115,17 @@ MmWaveBearerStatsCalculator::GetTypeId (void)
                    BooleanValue (true),
                    MakeBooleanAccessor (&MmWaveBearerStatsCalculator::m_aggregatedStats),
                    MakeBooleanChecker ())
-  ;
+    .AddAttribute ("ManualUpdate",
+                   "Choice to perform manual statistics update, i.e., triggered by an outside class such as a RAN-AI.",
+                   BooleanValue (false),
+                   MakeBooleanAccessor (&MmWaveBearerStatsCalculator::GetManualUpdate,
+                                     &MmWaveBearerStatsCalculator::SetManualUpdate),
+                   MakeBooleanChecker ())
+    .AddAttribute ("WriteToFile",
+                  "Choice to write stats to file besides computing thaem and exchange them with external classes",
+                  BooleanValue (false),
+                  MakeBooleanAccessor (&MmWaveBearerStatsCalculator::m_writeToFile),
+                  MakeBooleanChecker ());
   return tid;
 }
 
@@ -119,15 +133,20 @@ void
 MmWaveBearerStatsCalculator::DoDispose ()
 {
   NS_LOG_FUNCTION (this);
-  if (m_pendingOutput)
+  if (m_pendingOutputUl)
     {
-      ShowResults ();
+      WriteUlResults ();
     }
-}
+  if (m_pendingOutputDl)
+    {
+      WriteDlResults ();
+    }
+  }
 
 void
 MmWaveBearerStatsCalculator::SetStartTime (Time t)
 {
+  NS_LOG_FUNCTION (this);
   m_startTime = t;
   if (m_aggregatedStats)
   {
@@ -138,12 +157,14 @@ MmWaveBearerStatsCalculator::SetStartTime (Time t)
 Time
 MmWaveBearerStatsCalculator::GetStartTime () const
 {
+  NS_LOG_FUNCTION (this);
   return m_startTime;
 }
 
 void
 MmWaveBearerStatsCalculator::SetEpoch (Time e)
 {
+  NS_LOG_FUNCTION (this);
   m_epochDuration = e;
   if (m_aggregatedStats)
   {
@@ -154,7 +175,26 @@ MmWaveBearerStatsCalculator::SetEpoch (Time e)
 Time
 MmWaveBearerStatsCalculator::GetEpoch () const
 {
+  NS_LOG_FUNCTION (this);
   return m_epochDuration;
+}
+
+void
+MmWaveBearerStatsCalculator::SetManualUpdate (bool u)
+{
+  NS_LOG_FUNCTION (this);
+  m_manualUpdate = u;
+  if (m_manualUpdate)
+  {
+    m_endEpochEvent.Cancel();
+  }
+}
+
+bool
+MmWaveBearerStatsCalculator::GetManualUpdate () const
+{
+  NS_LOG_FUNCTION (this);
+  return m_manualUpdate;
 }
 
 void
@@ -171,7 +211,7 @@ MmWaveBearerStatsCalculator::UlTxPdu (uint16_t cellId, uint64_t imsi, uint16_t r
         m_ulTxPackets[p]++;
         m_ulTxData[p] += packetSize;
       }
-    m_pendingOutput = true;
+    m_pendingOutputUl = true;
   }
   else
   {
@@ -200,7 +240,7 @@ MmWaveBearerStatsCalculator::DlTxPdu (uint16_t cellId, uint64_t imsi, uint16_t r
         m_dlTxPackets[p]++;
         m_dlTxData[p] += packetSize;
       }
-    m_pendingOutput = true;
+    m_pendingOutputDl = true;
   }            
   else
   {
@@ -239,7 +279,7 @@ MmWaveBearerStatsCalculator::UlRxPdu (uint16_t cellId, uint64_t imsi, uint16_t r
         m_ulDelay[p]->Update (delay);
         m_ulPduSize[p]->Update (packetSize);
       }
-    m_pendingOutput = true;
+    m_pendingOutputUl = true;
   }
   else
   {
@@ -277,7 +317,7 @@ MmWaveBearerStatsCalculator::DlRxPdu (uint16_t cellId, uint64_t imsi, uint16_t r
       m_dlDelay[p]->Update (delay);
       m_dlPduSize[p]->Update (packetSize);
     }
-    m_pendingOutput = true;
+    m_pendingOutputDl = true;
   }
   else
   {
@@ -293,70 +333,37 @@ MmWaveBearerStatsCalculator::DlRxPdu (uint16_t cellId, uint64_t imsi, uint16_t r
 }
 
 void
-MmWaveBearerStatsCalculator::ShowResults (void)
-{
-
-  NS_LOG_FUNCTION (this << GetUlOutputFilename ().c_str () << GetDlOutputFilename ().c_str ());
-  NS_LOG_INFO ("Write stats in " << GetUlOutputFilename ().c_str () << " and in " << GetDlOutputFilename ().c_str ());
-
-  std::ofstream ulOutFile;
-  std::ofstream dlOutFile;
-
-  if (m_firstWrite == true)
-    {
-      ulOutFile.open (GetUlOutputFilename ().c_str ());
-      if (!ulOutFile.is_open ())
-        {
-          NS_LOG_ERROR ("Can't open file " << GetUlOutputFilename ().c_str ());
-          return;
-        }
-
-      dlOutFile.open (GetDlOutputFilename ().c_str ());
-      if (!dlOutFile.is_open ())
-        {
-          NS_LOG_ERROR ("Can't open file " << GetDlOutputFilename ().c_str ());
-          return;
-        }
-      m_firstWrite = false;
-      ulOutFile << "% start\tend\tCellId\tIMSI\tRNTI\tLCID\tnTxPDUs\tTxBytes\tnRxPDUs\tRxBytes\t";
-      ulOutFile << "delay\tstdDev\tmin\tmax\t";
-      ulOutFile << "PduSize\tstdDev\tmin\tmax";
-      ulOutFile << std::endl;
-      dlOutFile << "% start\tend\tCellId\tIMSI\tRNTI\tLCID\tnTxPDUs\tTxBytes\tnRxPDUs\tRxBytes\t";
-      dlOutFile << "delay\tstdDev\tmin\tmax\t";
-      dlOutFile << "PduSize\tstdDev\tmin\tmax";
-      dlOutFile << std::endl;
-    }
-  else
-    {
-      ulOutFile.open (GetUlOutputFilename ().c_str (), std::ios_base::app);
-      if (!ulOutFile.is_open ())
-        {
-          NS_LOG_ERROR ("Can't open file " << GetUlOutputFilename ().c_str ());
-          return;
-        }
-
-      dlOutFile.open (GetDlOutputFilename ().c_str (), std::ios_base::app);
-      if (!dlOutFile.is_open ())
-        {
-          NS_LOG_ERROR ("Can't open file " << GetDlOutputFilename ().c_str ());
-          return;
-        }
-    }
-
-  WriteUlResults (ulOutFile);
-  WriteDlResults (dlOutFile);
-  m_pendingOutput = false;
-
-}
-
-void
-MmWaveBearerStatsCalculator::WriteUlResults (std::ofstream& outFile)
+MmWaveBearerStatsCalculator::WriteUlResults ()
 {
   NS_LOG_FUNCTION (this);
 
-  // Get the unique IMSI / LCID list
+  std::ofstream outFile;
+  if (m_firstWriteUl)
+    {
+      outFile.open (GetUlOutputFilename ().c_str ());
+      if (!outFile.is_open ())
+        {
+          NS_LOG_ERROR ("Can't open file " << GetUlOutputFilename ().c_str ());
+          return;
+        }
 
+      m_firstWriteUl = false;
+      outFile << "% start\tend\tCellId\tIMSI\tRNTI\tLCID\tnTxPDUs\tTxBytes\tnRxPDUs\tRxBytes\t";
+      outFile << "delay\tstdDev\tmin\tmax\t";
+      outFile << "PduSize\tstdDev\tmin\tmax";
+      outFile << std::endl;
+    }
+  else
+    {
+      outFile.open (GetUlOutputFilename ().c_str (), std::ios_base::app);
+      if (!outFile.is_open ())
+        {
+          NS_LOG_ERROR ("Can't open file " << GetUlOutputFilename ().c_str ());
+          return;
+        }
+    }
+
+  // Get the unique IMSI / LCID list
   std::vector < ImsiLcidPair_t > pairVector;
   for (Uint32Map::iterator it = m_ulTxPackets.begin (); it != m_ulTxPackets.end (); ++it)
     {
@@ -366,7 +373,16 @@ MmWaveBearerStatsCalculator::WriteUlResults (std::ofstream& outFile)
         }
     }
 
-  Time endTime = m_startTime + m_epochDuration;
+  Time endTime; 
+  if (m_manualUpdate)
+  {
+    endTime = Simulator::Now ();
+  }
+  else
+  {
+    endTime = m_startTime + m_epochDuration;
+  }
+
   for (std::vector<ImsiLcidPair_t>::iterator it = pairVector.begin (); it != pairVector.end (); ++it)
     {
       ImsiLcidPair_t p = *it;
@@ -394,12 +410,39 @@ MmWaveBearerStatsCalculator::WriteUlResults (std::ofstream& outFile)
     }
 
   outFile.close ();
+  m_pendingOutputUl = false;
 }
 
 void
-MmWaveBearerStatsCalculator::WriteDlResults (std::ofstream& outFile)
+MmWaveBearerStatsCalculator::WriteDlResults ()
 {
   NS_LOG_FUNCTION (this);
+
+  std::ofstream outFile;
+  
+  if (m_firstWriteDl)
+    {
+      outFile.open (GetDlOutputFilename ().c_str ());
+      if (!outFile.is_open ())
+        {
+          NS_LOG_ERROR ("Can't open file " << GetDlOutputFilename ().c_str ());
+          return;
+        }
+      m_firstWriteDl = false;
+      outFile << "% start\tend\tCellId\tIMSI\tRNTI\tLCID\tnTxPDUs\tTxBytes\tnRxPDUs\tRxBytes\t";
+      outFile << "delay\tstdDev\tmin\tmax\t";
+      outFile << "PduSize\tstdDev\tmin\tmax";
+      outFile << std::endl;
+    }
+  else
+    {
+      outFile.open (GetDlOutputFilename ().c_str (), std::ios_base::app);
+      if (!outFile.is_open ())
+        {
+          NS_LOG_ERROR ("Can't open file " << GetDlOutputFilename ().c_str ());
+          return;
+        }
+    }
 
   // Get the unique IMSI list
   std::vector < ImsiLcidPair_t > pairVector;
@@ -411,7 +454,16 @@ MmWaveBearerStatsCalculator::WriteDlResults (std::ofstream& outFile)
         }
     }
 
-  Time endTime = m_startTime + m_epochDuration;
+  Time endTime; 
+  if (m_manualUpdate)
+  {
+    endTime = Simulator::Now ();
+  }
+  else
+  {
+    endTime = m_startTime + m_epochDuration;
+  }
+
   for (std::vector<ImsiLcidPair_t>::iterator pair = pairVector.begin (); pair != pairVector.end (); ++pair)
     {
       ImsiLcidPair_t p = *pair;
@@ -439,6 +491,132 @@ MmWaveBearerStatsCalculator::WriteDlResults (std::ofstream& outFile)
     }
 
   outFile.close ();
+  m_pendingOutputUl = false;
+}
+
+std::map<uint16_t, UlDlResults>
+MmWaveBearerStatsCalculator::ReadDlResults (uint16_t cellId)
+{
+  NS_LOG_FUNCTION (this);
+
+  // Get the unique IMSI list
+  std::vector<ImsiLcidPair_t> pairVector;
+  for (Uint32Map::iterator it = m_dlTxPackets.begin (); it != m_dlTxPackets.end (); ++it)
+    {
+      if (find (pairVector.begin (), pairVector.end (), (*it).first) == pairVector.end ())
+        {
+          pairVector.push_back ((*it).first);
+        }
+    }
+
+  std::map<uint16_t, UlDlResults> results;
+  for (std::vector<ImsiLcidPair_t>::iterator pair = pairVector.begin (); pair != pairVector.end ();
+       ++pair)
+    {
+      UlDlResults item;
+      ImsiLcidPair_t p = *pair;
+      if (GetDlCellId (p.m_imsi, p.m_lcId) != cellId)
+        {
+          continue; // we are only interested in stats from the input cellId
+        }
+      item.cellId = GetDlCellId (p.m_imsi, p.m_lcId);
+      item.imsi = p.m_imsi;
+      item.rnti = m_flowId[p].m_rnti;
+      item.lcid = (uint32_t) m_flowId[p].m_lcId;
+      item.txPackets = GetDlTxPackets (p.m_imsi, p.m_lcId);
+      item.txData = GetDlTxData (p.m_imsi, p.m_lcId);
+      item.rxPackets = GetDlRxPackets (p.m_imsi, p.m_lcId);
+      item.rxData = GetDlRxData (p.m_imsi, p.m_lcId);
+      std::vector<double> stats = GetDlDelayStats (p.m_imsi, p.m_lcId);
+      item.delayMean = stats.at (0) * 1e-9;
+      item.delayStdev = stats.at (1) * 1e-9;
+      item.delayMin = stats.at (2) * 1e-9;
+      item.delayMax = stats.at (3) * 1e-9;
+
+      results.insert (std::make_pair (item.imsi, item));
+    }
+  if (m_writeToFile)
+  {
+    WriteDlResults ();
+  }
+  ResetDlResults ();
+  m_startTime = Simulator::Now ();
+  return results;
+}
+
+std::map<uint16_t, UlDlResults>
+MmWaveBearerStatsCalculator::ReadUlResults (uint16_t cellId)
+{
+  NS_LOG_FUNCTION (this);
+
+  // Get the unique IMSI list
+  std::vector<ImsiLcidPair_t> pairVector;
+  for (Uint32Map::iterator it = m_ulTxPackets.begin (); it != m_ulTxPackets.end (); ++it)
+    {
+      if (find (pairVector.begin (), pairVector.end (), (*it).first) == pairVector.end ())
+        {
+          pairVector.push_back ((*it).first);
+        }
+    }
+  std::map<uint16_t, UlDlResults> results;
+  for (std::vector<ImsiLcidPair_t>::iterator pair = pairVector.begin (); pair != pairVector.end ();
+       ++pair)
+    {
+      UlDlResults item;
+      ImsiLcidPair_t p = *pair;
+      if (GetUlCellId (p.m_imsi, p.m_lcId) != cellId)
+        {
+          continue; // we are only interested in stats from the input cellId
+        }
+      item.cellId = GetUlCellId (p.m_imsi, p.m_lcId);
+      item.imsi = p.m_imsi;
+      item.rnti = m_flowId[p].m_rnti;
+      item.lcid = (uint32_t) m_flowId[p].m_lcId;
+      item.txPackets = GetUlTxPackets (p.m_imsi, p.m_lcId);
+      item.txData = GetUlTxData (p.m_imsi, p.m_lcId);
+      item.rxPackets = GetUlRxPackets (p.m_imsi, p.m_lcId);
+      item.rxData = GetUlRxData (p.m_imsi, p.m_lcId);
+      std::vector<double> stats = GetUlDelayStats (p.m_imsi, p.m_lcId);
+      item.delayMean = stats.at (0) * 1e-9;
+      item.delayStdev = stats.at (1) * 1e-9;
+      item.delayMin = stats.at (2) * 1e-9;
+      item.delayMax = stats.at (3) * 1e-9;
+
+      results.insert (std::make_pair (item.imsi, item));
+    }
+  if (m_writeToFile)
+  {
+    WriteUlResults ();
+  }
+  ResetUlResults ();
+  m_startTime = Simulator::Now ();
+  return results;
+}
+
+void
+MmWaveBearerStatsCalculator::ResetDlResults (void)
+{
+  NS_LOG_FUNCTION (this);
+  
+  m_dlTxPackets.erase (m_dlTxPackets.begin (), m_dlTxPackets.end ());
+  m_dlRxPackets.erase (m_dlRxPackets.begin (), m_dlRxPackets.end ());
+  m_dlRxData.erase (m_dlRxData.begin (), m_dlRxData.end ());
+  m_dlTxData.erase (m_dlTxData.begin (), m_dlTxData.end ());
+  m_dlDelay.erase (m_dlDelay.begin (), m_dlDelay.end ());
+  m_dlPduSize.erase (m_dlPduSize.begin (), m_dlPduSize.end ());
+}
+
+void
+MmWaveBearerStatsCalculator::ResetUlResults (void)
+{
+  NS_LOG_FUNCTION (this);
+  
+  m_ulTxPackets.erase (m_ulTxPackets.begin (), m_ulTxPackets.end ());
+  m_ulRxPackets.erase (m_ulRxPackets.begin (), m_ulRxPackets.end ());
+  m_ulRxData.erase (m_ulRxData.begin (), m_ulRxData.end ());
+  m_ulTxData.erase (m_ulTxData.begin (), m_ulTxData.end ());
+  m_ulDelay.erase (m_ulDelay.begin (), m_ulDelay.end ());
+  m_ulPduSize.erase (m_ulPduSize.begin (), m_ulPduSize.end ());
 }
 
 void
@@ -446,19 +624,8 @@ MmWaveBearerStatsCalculator::ResetResults (void)
 {
   NS_LOG_FUNCTION (this);
 
-  m_ulTxPackets.erase (m_ulTxPackets.begin (), m_ulTxPackets.end ());
-  m_ulRxPackets.erase (m_ulRxPackets.begin (), m_ulRxPackets.end ());
-  m_ulRxData.erase (m_ulRxData.begin (), m_ulRxData.end ());
-  m_ulTxData.erase (m_ulTxData.begin (), m_ulTxData.end ());
-  m_ulDelay.erase (m_ulDelay.begin (), m_ulDelay.end ());
-  m_ulPduSize.erase (m_ulPduSize.begin (), m_ulPduSize.end ());
-
-  m_dlTxPackets.erase (m_dlTxPackets.begin (), m_dlTxPackets.end ());
-  m_dlRxPackets.erase (m_dlRxPackets.begin (), m_dlRxPackets.end ());
-  m_dlRxData.erase (m_dlRxData.begin (), m_dlRxData.end ());
-  m_dlTxData.erase (m_dlTxData.begin (), m_dlTxData.end ());
-  m_dlDelay.erase (m_dlDelay.begin (), m_dlDelay.end ());
-  m_dlPduSize.erase (m_dlPduSize.begin (), m_dlPduSize.end ());
+  ResetDlResults ();
+  ResetUlResults ();
 }
 
 void
@@ -474,7 +641,8 @@ void
 MmWaveBearerStatsCalculator::EndEpoch (void)
 {
   NS_LOG_FUNCTION (this);
-  ShowResults ();
+  WriteUlResults ();
+  WriteDlResults ();
   ResetResults ();
   m_startTime += m_epochDuration;
   m_endEpochEvent = Simulator::Schedule (m_epochDuration, &MmWaveBearerStatsCalculator::EndEpoch, this);

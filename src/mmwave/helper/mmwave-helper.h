@@ -78,6 +78,7 @@
 #include <ns3/lte-spectrum-value-helper.h>
 #include <ns3/core-network-stats-calculator.h>
 #include <ns3/mmwave-component-carrier-enb.h>
+#include "ns3/bursty-app-stats-calculator.h"
 
 
 namespace ns3 {
@@ -331,6 +332,7 @@ public:
   NetDeviceContainer InstallSub6UeDevice (NodeContainer n);
   Ptr<NetDevice> InstallSingleSub6UeDevice (Ptr<Node>);
 
+  void InstallRanAI (NetDeviceContainer devices, std::map<uint16_t, Ptr<Application>> imsiApplication, Ptr<BurstyAppStatsCalculator> appStats);
   
 protected:
   virtual void DoInitialize ();
@@ -422,7 +424,6 @@ private:
   bool m_rlcAmEnabled;
   bool m_snrTest;
   bool m_useIdealRrc;       // Initialized as true in the constructor
-  bool m_installRanAI;      // Initialized as false in the constructor
 
   Ptr<MmWaveBearerStatsCalculator> m_rlcStats;
   Ptr<MmWaveBearerStatsCalculator> m_pdcpStats;

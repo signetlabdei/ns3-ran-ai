@@ -1,6 +1,8 @@
 #include <numeric>
 #include "ns3/ran-ai.h"
 #include "ns3/log.h"
+#include "ns3/mmwave-bearer-stats-calculator.h"
+#include "ns3/bursty-app-stats-calculator.h"
 
 using namespace ns3;
 using namespace mmwave;
@@ -12,46 +14,46 @@ RanAI::RanAI(uint16_t id) : Ns3AIRL<ranAIEnv, ranAIAct>(id)
   SetCond(2, 0);
 }
 
-uint16_t RanAI::ReportMeasures (uint8_t attr)
+uint16_t RanAI::ReportMeasures (double mcs, double symbols, double sinr, UlDlResults rlcResults, UlDlResults pdcpResults, AppResults appResults)
 {
   auto env = EnvSetterCond();
-  env->testAttr = attr;
-  
-  // uint8_t counter = 0;
-  // for (const auto& i : cellSinrMap)
-  // {
-  //   NS_ASSERT_MSG ((counter + 1) < MAX_NUM_CELL, "Too many cells");
-    
-  //   uint16_t cellId = i.first;
-  //   double sinr = i.second;
-  //   env->cellSinrMap [counter] [0] = (int32_t)cellId;
-  //   env->cellSinrMap [counter] [1] = (int32_t)(10 * std::log10 (sinr));
-  //   NS_LOG_DEBUG ("Handover Agent reports: cell " << cellId << 
-  //   " sinr " << (int32_t)(10 * std::log10 (sinr)) << 
-  //   " counter " << +counter);
-    
-  //   ++counter;
-  // }
-  
-  // counter = 0;
-  // for (const auto& i : bufferStatusMap)
-  // {
-  //   NS_ASSERT_MSG ((counter + 1) < MAX_NUM_LC, "Too many logical channels");
-    
-  //   uint8_t lcid = i.first;
-  //   uint32_t bufferSize = i.second;
-  //   env->bufferStatusMap [counter] [0] = (uint32_t)lcid;
-  //   env->bufferStatusMap [counter] [1] = bufferSize;
-    
-  //   ++counter;
-  // }
+
+  env->mcs = mcs;
+  env->symbols = symbols;
+  env->sinr = sinr;
+
+  env->rlcTxPackets = rlcResults.txPackets;
+  env->rlcTxData = rlcResults.txData;
+  env->rlcRxPackets = rlcResults.rxPackets;
+  env->rlcRxData = rlcResults.rxData;
+  env->rlcDelayMean = rlcResults.delayMean;
+  env->rlcDelayStdev = rlcResults.delayStdev;
+  env->rlcDelayMin = rlcResults.delayMin;
+  env->rlcDelayMax = rlcResults.delayMax;
+
+  env->pdcpTxPackets = pdcpResults.txPackets;
+  env->pdcpTxData = pdcpResults.txData;
+  env->pdcpRxPackets = pdcpResults.rxPackets;
+  env->pdcpRxData = pdcpResults.rxData;
+  env->pdcpDelayMean = pdcpResults.delayMean;
+  env->pdcpDelayStdev = pdcpResults.delayStdev;
+  env->pdcpDelayMin = pdcpResults.delayMin;
+  env->pdcpDelayMax = pdcpResults.delayMax;
+
+  env->appTxBursts = appResults.txBursts;
+  env->appTxData = appResults.txData;
+  env->appRxBursts = appResults.rxBursts;
+  env->appRxData = appResults.rxData;
+  env->appDelayMean = appResults.delayMean;
+  env->appDelayStdev = appResults.delayStdev;
+  env->appDelayMin = appResults.delayMin;
+  env->appDelayMax = appResults.delayMax;
 
   SetCompleted();
   
-  auto act = ActionGetterCond();
-  int action = act->testAct;
+  auto newAct = ActionGetterCond();
+  int action = newAct->act;
 
-  std::cout << Simulator::Now().GetSeconds() << " Action is " << action << std::endl;
   GetCompleted();
 
   return action;

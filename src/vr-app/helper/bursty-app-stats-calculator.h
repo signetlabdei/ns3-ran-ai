@@ -32,6 +32,20 @@
 #include "ns3/seq-ts-size-frag-header.h"
 
 namespace ns3 {
+
+struct AppResults
+  {
+    uint16_t imsi;
+    uint16_t txBursts;
+    uint32_t txData;
+    uint16_t rxBursts;
+    uint32_t rxData;
+    double delayMean;
+    double delayStdev;
+    double delayMin;
+    double delayMax;
+  };
+
 /**
  * \ingroup application
  *
@@ -94,6 +108,18 @@ public:
   void RescheduleEndEpoch ();
 
   /**
+   *
+   * \param u set the update mode (true if manual, automatic otherwise)
+   */
+  void SetManualUpdate (bool u);
+
+  /**
+   *
+   * \return whether the update is manual or not 
+   */
+  bool GetManualUpdate () const;
+
+  /**
    * Notifies the stats calculator that a burst of packets has been transmitted.
    * \param nodeId ID of the node sending the burst
    * \param burst packet representing the complete burst
@@ -112,6 +138,11 @@ public:
    * \param header burst header containing trasmission information
    */
   void RxBurst (uint32_t nodeId, Ptr<const Packet> burst, const Address &from, const Address &to, const SeqTsSizeFragHeader &header);
+
+  /**
+   * 
+   */
+  std::map<uint16_t, AppResults> ReadResults (void);
 
   /**
    * Called after each epoch to write collected
@@ -160,6 +191,8 @@ private:
   bool m_firstWrite; //! true if output files have not been opened yet
   bool m_pendingOutput; //!< true if any output is pending
   bool m_aggregatedStats; //!< true if results are shown aggregated
+  bool m_manualUpdate; //!< true if update is triggered by external entity (such as RAN-AI)
+  bool m_writeToFile; //!< determine if the traces must be output to file or just evaluated and exchanged with external classes
 
   std::map<uint32_t, uint32_t> m_txBursts; //!< number of bursts sent in a specific epoch per node ID
   std::map<uint32_t, uint64_t> m_txData; //!< number of bytes sent in a specific epoch per node ID

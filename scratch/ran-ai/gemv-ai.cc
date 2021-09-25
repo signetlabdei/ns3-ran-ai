@@ -67,11 +67,15 @@ main (int argc, char *argv[])
   double ulIpiMicroS = 100e3;
   double dlIpiMicroS = 500e3;
   double bandwidth = 50e6;
-  std::string appTracesPath = "input/kitti-dataset.csv";
-  std::string gemvTracesPath = "/home/dragomat/Documents/ns3-mmwave-pqos/input/bolognaLeftHalfRSU3_50vehicles_100sec/13-May-2021_";
+  std::string appTracesPath = "../../../input/kitti-dataset.csv";
+  std::string gemvTracesPath = "../../../input/bolognaLeftHalfRSU3_50vehicles_100sec/13-May-2021_";
   std::string appType = "kitti";
-  uint32_t kittiModel = 1450;
+  uint32_t kittiModel = 1452;
+  uint32_t updatePeriodicity = 100;
+  uint32_t simDuration = 10;
   double txPower = 30.0;
+  bool installRanAI = true;
+  bool writeToFile = false;
 
   CommandLine cmd;
   cmd.AddValue ("numUes", "Number of UE nodes", numUes);
@@ -86,6 +90,10 @@ main (int argc, char *argv[])
   cmd.AddValue ("applicationType", "Uplink application to install in the clients [classic, kitti].", appType);
   cmd.AddValue ("kittiModel", "Compression type [1450, 1451, 1452, 1150]", kittiModel);
   cmd.AddValue ("txPower", "The vehicle tx power in dBm", txPower);
+  cmd.AddValue ("updatePeriodicity", "The periodicity of the RAN-AI status update", updatePeriodicity);
+  cmd.AddValue ("simDuration", "The duration of the simulation, in seconds", simDuration);
+  cmd.AddValue ("installRanAI", "Decide whether or not to install the RAN-AI entity", installRanAI);
+  cmd.AddValue ("writeToFile", "Decide whether or not to write PHY, RLC, PDCP and APP stats to file", writeToFile);
   cmd.Parse (argc, argv);
   
   Config::SetDefault ("ns3::MmWaveBearerStatsCalculator::AggregatedStats", BooleanValue (true));
@@ -98,7 +106,16 @@ main (int argc, char *argv[])
   Config::SetDefault ("ns3::MmWavePhyMacCommon::NumHarqProcess", UintegerValue (100));
   Config::SetDefault ("ns3::LteRlcAm::PollRetransmitTimer", TimeValue (MilliSeconds (100)));
   Config::SetDefault ("ns3::MmWaveUePhy::TxPower", DoubleValue (txPower));
-  
+  Config::SetDefault ("ns3::MmWaveEnbNetDevice::StatusUpdate", TimeValue (MilliSeconds(updatePeriodicity)));
+  Config::SetDefault ("ns3::MmWaveBearerStatsCalculator::WriteToFile", BooleanValue (writeToFile));
+  Config::SetDefault ("ns3::BurstyAppStatsCalculator::WriteToFile", BooleanValue (writeToFile));
+  if (installRanAI)
+    {
+      // The following two attributes need to be set to true to avoid conflict in RAN-AI traces and the ones printed in text
+      Config::SetDefault ("ns3::MmWaveBearerStatsCalculator::ManualUpdate", BooleanValue (true));
+      Config::SetDefault ("ns3::BurstyAppStatsCalculator::ManualUpdate", BooleanValue (true));
+    }
+
   Ptr<GemvPropagationLossModel> gemv = CreateObject<GemvPropagationLossModel> ();
   
   char buffer [256];
@@ -107,6 +124,14 @@ main (int argc, char *argv[])
   Time timeRes = MilliSeconds (100);
   gemv->SetTimeResolution (timeRes);
   Time maxSimTime = gemv->GetMaxSimulationTime ();
+  if ( Seconds(simDuration) <= maxSimTime )
+  {
+    maxSimTime = Seconds (simDuration);
+  }
+  else
+  {
+    NS_LOG_WARN("The simulation duration cannot exceed the duration of the traces.");
+  }
   gemv->SetAttribute ("IncludeSmallScale", BooleanValue (true));
 
   std::vector<uint16_t> rsuList = gemv->GetDistinctIds(true);
@@ -216,6 +241,8 @@ main (int argc, char *argv[])
   Ptr<BurstyAppStatsCalculator> statsCalculator = CreateObject<BurstyAppStatsCalculator>();
   Time ulIpi = MicroSeconds (ulIpiMicroS);
   Time dlIpi = MicroSeconds (dlIpiMicroS);
+
+  std::map<uint16_t, Ptr<Application>> imsiApplication;
   
   for (uint32_t u = 0; u < ueNodes.GetN (); ++u)
     {
@@ -255,9 +282,14 @@ main (int argc, char *argv[])
           burstyHelper.SetAttribute ("FragmentSize", UintegerValue (1200));
           burstyHelper.SetBurstGenerator ("ns3::KittiTraceBurstGenerator", "TraceFile", StringValue (appTracesPath));
 
-          clientApps.Add (burstyHelper.Install (ueNodes.Get (u)));
+          ApplicationContainer appContainer = burstyHelper.Install (ueNodes.Get (u));
+          clientApps.Add (appContainer.Get (0));
 
-          Ptr<BurstyApplication> burstyApp = DynamicCast<BurstyApplication>  (clientApps.Get ( clientApps.GetN() - 1 )); // obtain the last one inserted
+          // Retrieve node IMSI and add application pointer to map
+          auto imsi = DynamicCast<MmWaveUeNetDevice>(ueNodes.Get (u)->GetDevice(0))->GetImsi();
+          imsiApplication.insert (std::make_pair (imsi, appContainer.Get (0)));
+
+          Ptr<BurstyApplication> burstyApp = DynamicCast<BurstyApplication>  (appContainer.Get (0)); // obtain the last one inserted
           burstyApp->TraceConnectWithoutContext ("BurstTx", MakeBoundCallback (&TxBurstCallback, ueNodes.Get (u)->GetId(), statsCalculator));
 
           // Create burst sink helper
@@ -268,7 +300,7 @@ main (int argc, char *argv[])
           Ptr<BurstSink> burstSink = DynamicCast<BurstSink> (serverApps.Get ( serverApps.GetN() - 1 )); // obtain the last one inserted
 
           // Connect application traces
-          burstSink->TraceConnectWithoutContext ("BurstRx", MakeBoundCallback (&RxBurstCallback, ueNodes.Get (u)->GetId(), statsCalculator));
+          burstSink->TraceConnectWithoutContext ("BurstRx", MakeBoundCallback (&RxBurstCallback, imsi, statsCalculator));
         }
       else
         {
@@ -291,7 +323,19 @@ main (int argc, char *argv[])
   serverApps.Start (MilliSeconds (10));
   clientApps.Start (MilliSeconds (100));
   clientApps.Stop (maxSimTime - Seconds (2.0));
-  mmWaveHelper->EnableTraces ();
+  // Enable trace collection and install RAN-AI on each eNB in the scenario 
+  // This must be done in this order, otherwise the RAN-AI does not receive any information
+  mmWaveHelper->EnableRlcTraces ();
+  mmWaveHelper->EnablePdcpTraces ();
+  if (writeToFile)
+  {
+    mmWaveHelper->EnableDlPhyTrace ();
+    mmWaveHelper->EnableUlPhyTrace ();
+  }
+  if (installRanAI)
+  {
+    mmWaveHelper->InstallRanAI (rsuDevs, imsiApplication, statsCalculator);
+  }
   
   Time simTime = maxSimTime - Seconds (1.0);
   std::cout << "Max simulation time: " << maxSimTime.GetSeconds () << " s" << "\n";
@@ -302,3 +346,4 @@ main (int argc, char *argv[])
   Simulator::Destroy ();
   return 0;
 }
+  
