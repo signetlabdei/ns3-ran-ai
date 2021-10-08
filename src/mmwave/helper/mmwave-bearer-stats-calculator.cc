@@ -577,10 +577,10 @@ MmWaveBearerStatsCalculator::ReadUlResults (uint16_t cellId)
       item.rxPackets = GetUlRxPackets (p.m_imsi, p.m_lcId);
       item.rxData = GetUlRxData (p.m_imsi, p.m_lcId);
       std::vector<double> stats = GetUlDelayStats (p.m_imsi, p.m_lcId);
-      item.delayMean = stats.at (0) * 1e-9;
-      item.delayStdev = stats.at (1) * 1e-9;
-      item.delayMin = stats.at (2) * 1e-9;
-      item.delayMax = stats.at (3) * 1e-9;
+      item.delayMean = stats.at (0);
+      item.delayStdev = stats.at (1);
+      item.delayMin = stats.at (2);
+      item.delayMax = stats.at (3);
 
       results.insert (std::make_pair (item.imsi, item));
     }

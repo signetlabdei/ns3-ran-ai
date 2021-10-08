@@ -6,41 +6,17 @@
 
 namespace ns3 {
 namespace mmwave {
-  
+
+#define MAX_NUM_USERS 50 // maximum number of users
+
 struct ranAIEnv
 {
-  double mcs;
-  double symbols;
-  double sinr;
-  uint16_t rlcTxPackets;
-  uint32_t rlcTxData;
-  uint16_t rlcRxPackets;
-  uint32_t rlcRxData;
-  double rlcDelayMean;
-  double rlcDelayStdev;
-  double rlcDelayMin;
-  double rlcDelayMax;
-  uint16_t pdcpTxPackets;
-  uint32_t pdcpTxData;
-  uint16_t pdcpRxPackets;
-  uint32_t pdcpRxData;
-  double pdcpDelayMean;
-  double pdcpDelayStdev;
-  double pdcpDelayMin;
-  double pdcpDelayMax;
-  uint16_t appTxBursts;
-  uint32_t appTxData;
-  uint16_t appRxBursts;
-  uint32_t appRxData;
-  double appDelayMean;
-  double appDelayStdev;
-  double appDelayMin;
-  double appDelayMax;
+  double imsiStatsMap[MAX_NUM_USERS][28]; // [max # of users][# of statistics]
 } Packed;
 
 struct ranAIAct
 {
-  int act;
+  uint16_t act[MAX_NUM_USERS][2];
 };
 
 class RanAI : public Ns3AIRL<ranAIEnv, ranAIAct>
@@ -49,7 +25,7 @@ class RanAI : public Ns3AIRL<ranAIEnv, ranAIAct>
     RanAI ();
     RanAI (uint16_t id);
 
-    uint16_t ReportMeasures (double mcs, double symbols, double sinr, UlDlResults rlcResults, UlDlResults pdcpResults, AppResults appResults);
+    std::map<uint16_t, uint16_t> ReportMeasures (std::map<double, std::vector<double>> stats);
 };
 
 } // namespace mmwave

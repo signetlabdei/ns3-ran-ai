@@ -41,6 +41,33 @@
       ]
     },
     {
+      "name": "Debug from scratch/ran-ai",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/build/scratch/ran-ai/ran-ai",
+      "preLaunchTask": "Build",
+      "args": ["--appTracesPath=/home/dragomat/Documents/work/ns3-mmwave-pqos/input/kitti-dataset.csv", 
+        "--gemvTracesPath=/home/dragomat/Documents/work/ns3-mmwave-pqos/input/bolognaLeftHalfRSU3_50vehicles_100sec/13-May-2021_",
+      "--numUes=50", "--installRanAI=false"],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [
+        {
+          "name": "LD_LIBRARY_PATH",
+          "value": "./build/lib/"
+        }
+      ],
+      "externalConsole": true,
+      "MIMode": "gdb",
+      "setupCommands": [
+        {
+          "description": "Enable pretty-printing for gdb",
+          "text": "-enable-pretty-printing",
+          "ignoreFailures": true
+        }
+      ]
+    },
+    {
       "name": "Debug example",
       "type": "cppdbg",
       "request": "launch",

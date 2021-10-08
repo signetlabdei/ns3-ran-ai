@@ -115,13 +115,15 @@ def multi_linear_plot(multi_data: [np.ndarray],
                       font_size=None):
 
     if colors is None:
-        colors = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple']
+        colors = ['tab:blue', 'tab:orange', 'tab:green', 'tab:red', 'tab:purple',
+                  'tab:brown', 'tab:pink', 'tab:gray', 'tab:olive', 'tab:cyan']
 
     if transparent_colors is None:
-        transparent_colors = ['lightcyan', 'linen', 'honeydew', 'mistyrose', 'thistle']
+        transparent_colors = ['lightcyan', 'linen', 'honeydew', 'mistyrose', 'thistle',
+                              'seashell', 'lavenderblush', 'gainsboro', 'beige', 'aliceblue']
 
     if markers is None:
-        markers = ['P', 'X', 'd', 'v', '1']
+        markers = ['P', 'X', 'd', 'v', '1', 'D', 's', '*', '>', '<']
 
     if font_size is not None:
         matplotlib.rcParams['font.size'] = font_size
@@ -179,6 +181,7 @@ def multi_linear_plot(multi_data: [np.ndarray],
             if fill_between:
                 plt.fill_between(episode, lower_confidence, upper_confidence,
                                  color=transparent_colors[data_idx], zorder=0)
+
             plt.plot(episode, data_avg, label=data_keys[data_idx],
                      color=colors[data_idx], linewidth=0.8, marker=markers[data_idx], zorder=5)
 

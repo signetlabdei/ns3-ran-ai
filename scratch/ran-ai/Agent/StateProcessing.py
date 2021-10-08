@@ -2,82 +2,80 @@ import numpy as np
 from ctypes import *
 
 
-def state_process(env_features: Structure, env_normalization: {}, state_features: [], state_dim: int):
+def state_process(env_features: Structure,
+                  feature_indexes: [],
+                  feature_normalization: [],
+                  combination_feature_indexes: [],
+                  combination_feature_normalization: [],
+                  state_dim: int,
+                  user_num: int):
 
-    state = np.zeros(state_dim)
-    for i, feature in enumerate(state_features):
+    states = [np.zeros(state_dim) for _ in range(user_num)]
+    imsi_list = []
 
-        if feature == 'mcs':
-            state[i] = env_features.mcs
+    feature_num = len(feature_indexes)
 
-        elif feature == 'symbols':
+    for user_idx in range(user_num):
+        imsi_list.append(int(env_features[user_idx][0]))
 
-            state[i] = float(env_features.symbols)
+        for state_idx, feature_idx in enumerate(feature_indexes):
+            min_value = feature_normalization[state_idx][0]
+            max_value = feature_normalization[state_idx][1]
 
-        elif feature == 'sinr':
-            state[i] = env_features.sinr
+            feature = env_features[user_idx][feature_idx]
+            feature = np.max((min_value, feature))
+            feature = np.min((max_value, feature))
+            feature = (feature - min_value) / (max_value - min_value)
 
-        elif feature == 'rlcTxPackets':
-            state[i] = env_features.rlcTxPackets
+            states[user_idx][state_idx] = feature
 
-        elif feature == 'rlcTxData':
-            state[i] = env_features.rlcTxData
+        for state_idx, comb_indexes in enumerate(combination_feature_indexes):
 
-        elif feature == 'rlcRxPackets':
-            state[i] = env_features.rlcRxPackets
+            num_idx, den_idx = comb_indexes
+            num, den = env_features[user_idx][num_idx], env_features[user_idx][den_idx]
 
-        elif feature == 'rlcRxData':
-            state[i] = env_features.rlcRxData
+            min_value = combination_feature_normalization[state_idx][0]
+            max_value = combination_feature_normalization[state_idx][1]
 
-        elif feature == 'pdcpTxPackets':
-            state[i] = env_features.pdcpTxPackets
-
-        elif feature == 'pdcpTxData':
-            state[i] = env_features.pdcpTxData
-
-        elif feature == 'pdcpRxPackets':
-            state[i] = env_features.pdcpRxPackets
-
-        elif feature == 'pdcpRxData':
-            state[i] = env_features.pdcpRxData
-
-        elif feature == 'pdcpDelayMean':
-            state[i] = env_features.pdcpDelayMean
-
-        elif feature == 'pdcpDelayMax':
-            state[i] = env_features.pdcpDelayMax
-
-        elif feature == 'rlcDelayMean':
-            state[i] = env_features.rlcDelayMean
-
-        elif feature == 'rlcDelayMax':
-            state[i] = env_features.rlcDelayMax
-
-        elif feature == 'pdcpRatio':
-            if env_features.pdcpTxData > 0:
-                state[i] = env_features.pdcpRxData / env_features.pdcpTxData
+            if den <= 0:
+                feature = 1
             else:
-                state[i] = 1
+                feature = num / den
 
-        elif feature == 'rlcRatio':
-            if env_features.rlcTxData > 0:
-                state[i] = env_features.rlcRxData / env_features.rlcTxData
+            feature = np.max((min_value, feature))
+            feature = np.min((max_value, feature))
+            feature = (feature - min_value) / (max_value - min_value)
+
+            states[user_idx][state_idx + feature_num] = feature
+
+    return states, imsi_list
+
+
+def reward_process(env_features: Structure,
+                   pdr_feature_indexes: [],
+                   last_actions: [int],
+                   bonus_per_action: [float],
+                   user_num: int):
+
+    rewards = [0] * user_num
+    imsi_list = []
+
+    for user_idx in range(user_num):
+
+        imsi_list.append(int(env_features[user_idx][0]))
+
+        for state_idx, comb_indexes in enumerate(pdr_feature_indexes):
+
+            num_idx, den_idx = comb_indexes
+            num, den = env_features[user_idx][num_idx], env_features[user_idx][den_idx]
+
+            if den <= 0:
+                feature = 1
             else:
-                state[i] = 1
+                feature = num / den
 
-        else:
-            raise ValueError("Unknown state variable!")
+            if feature >= 1:
 
-        shift, norm = env_normalization[feature]
-        state[i] -= np.min((state[i], shift))
-        state[i] = np.min((1, state[i] / norm))
+                rewards[user_idx] = bonus_per_action[last_actions[user_idx]]
 
-    if env_features.pdcpTxData > 0:
-        reward = np.min((1, env_features.pdcpRxData / env_features.pdcpTxData))
-
-    else:
-        reward = 1
-
-    reward -= env_features.pdcpDelayMean
-
-    return state, reward
+    return rewards, imsi_list

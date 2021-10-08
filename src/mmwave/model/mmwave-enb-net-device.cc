@@ -354,6 +354,8 @@ MmWaveEnbNetDevice::SendStatusUpdate ()
 
   std::map<uint16_t, AppResults> appResults = m_appStats->ReadResults ();
 
+  std::map<double, std::vector<double>> imsiStatsMap;
+  
   // Send to the RAN-AI information about **each user**, in order to get the associated action
   for (auto it = rlcResults.begin (); it != rlcResults.end (); it++)
     {
@@ -403,20 +405,41 @@ MmWaveEnbNetDevice::SendStatusUpdate ()
           {
             NS_LOG_WARN ("There isn't any APP information associated to IMSI " << it->first);
           }
-        // TODO need to check if we are collecting information on the same IMSI at each level
-        NS_LOG_UNCOND("IMSI checker " << " " << it->first << " " << itPdcp->first << " " << itSinr->first << " " << itSymbols->first << " " << itApp->second.imsi);
-
-        // Report measure window and get the associated action
-        uint16_t action = m_ranAI->ReportMeasures (mcs, symbolsMean, sinrMean, it->second, itPdcp->second, itApp->second);
         
-        // Retrieve pointer to application associated to IMSI
-        auto app = m_imsiApp.find(it->first);
-        Ptr<BurstyApplication> bursty = (app->second)->GetObject<BurstyApplication>();
+        // print to check if we are collecting information on the same IMSI at each level
+        NS_LOG_DEBUG("IMSI checker " << " " << it->first << " " << itPdcp->first << " " << itSinr->first << " " << itSymbols->first << " " << itApp->second.imsi);
 
-        // Propagate the action to the application associated to this IMSI
-        Ptr<KittiTraceBurstGenerator> burstGenerator = DynamicCast<KittiTraceBurstGenerator> (DynamicCast<BurstyApplication> (app->second)->GetBurstGenerator ());
-        NS_LOG_DEBUG ("Action is set to " << action << " for IMSI " << it->first);
-        burstGenerator->SetModel(action);
+        std::vector<double> stats = {
+            mcs,
+            symbolsMean,
+            sinrMean,
+            (double) it->second.txPackets,
+            (double) it->second.txData,
+            (double) it->second.rxPackets,
+            (double) it->second.rxData,
+            it->second.delayMean,
+            it->second.delayStdev,
+            it->second.delayMin,
+            it->second.delayMax,
+            (double) itPdcp->second.txPackets,
+            (double) itPdcp->second.txData,
+            (double) itPdcp->second.rxPackets,
+            (double) itPdcp->second.rxData,
+            itPdcp->second.delayMean,
+            itPdcp->second.delayStdev,
+            itPdcp->second.delayMin,
+            itPdcp->second.delayMax,
+            (double) itApp->second.txBursts,
+            (double) itApp->second.txData,
+            (double) itApp->second.rxBursts,
+            (double) itApp->second.rxData,
+            itApp->second.delayMean,
+            itApp->second.delayStdev,
+            itApp->second.delayMin,
+            itApp->second.delayMax,
+        };
+
+        imsiStatsMap.insert(std::make_pair(it->first, stats));
       }
       else
       {
@@ -424,6 +447,29 @@ MmWaveEnbNetDevice::SendStatusUpdate ()
       }
     }
   
+  // Report measure window and get the associated actions
+  std::map<uint16_t, uint16_t> actions = m_ranAI->ReportMeasures (imsiStatsMap);
+
+  // propagate actions to all UEs
+  for (const auto& i: actions)
+  {
+    // Retrieve pointer to application associated to IMSI
+    auto app = m_imsiApp.find(i.first);
+    if (app != m_imsiApp.end())
+    {
+      Ptr<BurstyApplication> bursty = (app->second)->GetObject<BurstyApplication>();
+
+      // Propagate the action to the application associated to this IMSI
+      Ptr<KittiTraceBurstGenerator> burstGenerator = DynamicCast<KittiTraceBurstGenerator> (DynamicCast<BurstyApplication> (app->second)->GetBurstGenerator ());
+      NS_LOG_DEBUG ("Action is set to " << i.second << " for IMSI " << i.first);
+      burstGenerator->SetModel(i.second);
+    }
+    else
+    {
+      NS_LOG_UNCOND ("Cannot find an application associated to IMSI " << i.first);
+    }
+  }
+
   // Schedule next status update
   Simulator::Schedule (m_statusUpdate, &MmWaveEnbNetDevice::SendStatusUpdate, this);
 }

@@ -44,6 +44,8 @@ using namespace mmwave;
 
 NS_LOG_COMPONENT_DEFINE ("GemvIntegrationExample");
 
+#define MAX_NUM_USERS 50 // maximum number of users
+
 static void
 RxBurstCallback (uint32_t nodeId, Ptr<BurstyAppStatsCalculator> statsCalculator, Ptr<const Packet> burst, const Address &from,
          const Address &to, const SeqTsSizeFragHeader &header)
@@ -102,6 +104,7 @@ main (int argc, char *argv[])
   Config::SetDefault ("ns3::KittiTraceBurstGenerator::Model", UintegerValue (kittiModel));
   Config::SetDefault ("ns3::MmWavePhyMacCommon::Bandwidth", DoubleValue (bandwidth));
   Config::SetDefault ("ns3::MmWaveHelper::RlcAmEnabled", BooleanValue (true));
+  Config::SetDefault ("ns3::MmWaveHelper::UseIdealRrc", BooleanValue (true));
   Config::SetDefault ("ns3::UdpClient::PacketSize", UintegerValue (packetSizeBytes));
   Config::SetDefault ("ns3::MmWavePhyMacCommon::NumHarqProcess", UintegerValue (100));
   Config::SetDefault ("ns3::LteRlcAm::PollRetransmitTimer", TimeValue (MilliSeconds (100)));
@@ -157,7 +160,7 @@ main (int argc, char *argv[])
   }
   std::cout << "Number of RSU nodes: " << rsuNodes.GetN () << std::endl;
   NS_ABORT_MSG_IF (rsuNodes.GetN () > 1, "This example works with a single RSU");
-  
+
   for (size_t i = firstVehicleIndex; i < firstVehicleIndex + numUes; i++)
   {
     // create the vehicular node and add it to the container
@@ -166,7 +169,7 @@ main (int argc, char *argv[])
     
     // create the gemv tag and aggrgate it to the node
     Ptr<GemvTag> tag = CreateObject<GemvTag>();
-    tag->SetTagId (ueList.at (i));
+    tag->SetTagId (ueList.at (i % MAX_NUM_USERS));
     tag->SetNodeType (false);
     n->AggregateObject (tag);
   }

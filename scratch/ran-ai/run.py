@@ -4,7 +4,7 @@ import numpy as np
 import time
 import os
 from Agent.Agent import Agent
-from Agent.StateProcessing import state_process
+from Agent.StateProcessing import state_process, reward_process
 
 
 # The environment is shared between ns-3
@@ -14,57 +14,81 @@ from Agent.StateProcessing import state_process
 class Env(Structure):
     _pack_ = 1
     _fields_ = [
-        ('mcs', c_double),
-        ('symbols', c_double),
-        ('sinr', c_double),
-        ('rlcTxPackets', c_int16),
-        ('rlcTxData', c_int32),
-        ('rlcRxPackets', c_int16),
-        ('rlcRxData', c_int32),
-        ('rlcDelayMean', c_double),
-        ('rlcDelayStdev', c_double),
-        ('rlcDelayMin', c_double),
-        ('rlcDelayMax', c_double),
-        ('pdcpTxPackets', c_int16),
-        ('pdcpTxData', c_int32),
-        ('pdcpRxPackets', c_int16),
-        ('pdcpRxData', c_int32),
-        ('pdcpDelayMean', c_double),
-        ('pdcpDelayStdev', c_double),
-        ('pdcpDelayMin', c_double),
-        ('pdcpDelayMax', c_double),
-        ('appTxBursts', c_int16),
-        ('appTxData', c_int32),
-        ('appRxBursts', c_int16),
-        ('appRxData', c_int32),
-        ('appDelayMean', c_double),
-        ('appDelayStdev', c_double),
-        ('appDelayMin', c_double),
-        ('appDelayMax', c_double)
+        ('imsiStatsMap', (c_double * 28) * 50)
     ]
 
 
-env_normalization = {'mcs': (0, 28),
+env_features = ['imsi',
+                'mcs',
+                'symbols',
+                'sinr',
+
+                'rlc_tx_pkt',
+                'rlc_tx_data',
+                'rlc_rx_pkt',
+                'rlc_rx_data',
+
+                'rlc_delay_mean',
+                'rlc_delay_stdev',
+                'rlc_delay_min',
+                'rlc_delay_max',
+
+                'pdcp_tx_pkt',
+                'pdcp_tx_data',
+                'pdcp_rx_pkt',
+                'pdcp_rx_data',
+
+                'pdcp_delay_mean',
+                'pdcp_delay_stdev',
+                'pdcp_delay_min',
+                'pdcp_delay_max',
+
+                'app_tx_pkt',
+                'app_tx_data',
+                'app_rx_pkt',
+                'app_rx_data',
+
+                'app_delay_mean',
+                'app_delay_stdev',
+                'app_delay_min',
+                'app_delay_max'
+                ]
+
+env_normalization = {'imsi': None,
+                     'mcs': (0, 28),
                      'symbols': (0, 12),
-                     'sinr': (0, 50),
-                     'rlcTxPackets': (0, 1),
-                     'rlcTxData': (0, 1),
-                     'rlcRxPackets': (0, 1),
-                     'rlcRxData': (0, 1),
-                     'pdcpTxPackets': (0, 1),
-                     'pdcpTxData': (0, 1),
-                     'pdcpRxPackets': (0, 1),
-                     'pdcpRxData': (0, 1),
-                     'pdcpDelayMean': (0, 0.1),
-                     'pdcpDelayStdev': (0, 0.1),
-                     'pdcpDelayMin': (0, 0.1),
-                     'pdcpDelayMax': (0, 0.1),
-                     'rlcDelayMean': (0, 0.1),
-                     'rlcDelayStdev': (0, 0.1),
-                     'rlcDelayMin': (0, 0.1),
-                     'rlcDelayMax': (0, 0.1),
-                     'pdcpRatio': (0, 1),
-                     'rlcRatio': (0, 1)}
+                     'sinr': (0, 60),
+
+                     'rlc_tx_pkt': (0, 1),
+                     'rlc_tx_data': (0, 1),
+                     'rlc_rx_pkt': (0, 1),
+                     'rlc_rx_data': (0, 1),
+
+                     'rlc_delay_mean': (0, 100000000),
+                     'rlc_delay_stdev': (0, 100000000),
+                     'rlc_delay_min': (0, 100000000),
+                     'rlc_delay_max': (0, 100000000),
+
+                     'pdcp_tx_pkt': (0, 1),
+                     'pdcp_tx_data': (0, 1),
+                     'pdcp_rx_pkt': (0, 1),
+                     'pdcp_rx_data': (0, 1),
+
+                     'pdcp_delay_mean': (0, 100000000),
+                     'pdcp_delay_stdev': (0, 100000000),
+                     'pdcp_delay_min': (0, 100000000),
+                     'pdcp_delay_max': (0, 100000000),
+
+                     'app_tx_pkt': (0, 1),
+                     'app_tx_data': (0, 1),
+                     'app_rx_pkt': (0, 1),
+                     'app_rx_data': (0, 1),
+
+                     'app_delay_mean': (0, 100000000),
+                     'app_delay_stdev': (0, 100000000),
+                     'app_delay_min': (0, 100000000),
+                     'app_delay_max': (0, 100000000)
+                     }
 
 
 # The result is calculated by python
@@ -73,44 +97,76 @@ env_normalization = {'mcs': (0, 28),
 class Act(Structure):
     _pack_ = 1
     _fields_ = [
-        ('action', c_int)
+        ('actions', (c_int16 * 2) * 50)
     ]
 
 
-episode_num = 1000  # Number of episodes
+user_num = 2
+episode_num = 20  # Number of episodes
 step_num = 100  # Number of steps per episode
 temperatures = np.flip(np.arange(episode_num)) / episode_num  # Temperatures (for the epsilon greedy policy)
 step_duration = 100  # Duration of a step [ms]
 sim_duration = step_num * step_duration / 1000  # Duration of the simulation [s]
-state_features = ['mcs', 'symbols', 'sinr', 'rlcRatio', 'pdcpRatio', 'pdcpDelayMean', 'pdcpDelayMax', 'rlcDelayMean', 'rlcDelayMax']
-state_normalization = [env_normalization[feature] for feature in state_features]
-# actions = [0, 1, 2, 1450, 1451, 1452]
-actions = [1, 2, 1452]
+
+state_labels = ['MCS', 'Symbols', 'SINR', 'Mean delay [ms]', 'Max delay  [ms]', 'PDR']
+state_normalization = [(0, 28), (0, 12), (0, 60), (0, 100), (0, 1000), (0, 1)]
+
+state_features = ['mcs',
+                  'symbols',
+                  'sinr',
+                  'pdcp_delay_mean',
+                  'pdcp_delay_max']
+
+pdr_features = [('pdcp_rx_data',
+                 'pdcp_tx_data')]
+
+state_feature_normalization = [env_normalization[feature] for feature in state_features]
+
+pdr_normalization = [(0, 1), (0, 1)]
+
+state_feature_indexes = []
+
+for feature in state_features:
+    state_feature_indexes.append(env_features.index(feature))
+
+pdr_indexes = []
+
+for num, den in pdr_features:
+    pdr_indexes.append((env_features.index(num), env_features.index(den)))
+
+action_keys = [1, 2, 1452]
+action_num = len(action_keys)
+
+cf_mean_per_action = {1150: 0.002492, 1450: 0.000044, 1451: 5.476881, 1452: 35.634660, 1: 5.476811, 2: 35.634485}
+action_indexes = range(action_num)
+action_bonus = [cf_mean_per_action[action] for action in action_keys]
+last_action_indexes = [0] * user_num
 
 # Python-ns3 interface
 
-ns3Settings = {'numUes': 1, 'simDuration': sim_duration, 'updatePeriodicity': step_duration}
+ns3Settings = {'numUes': user_num, 'simDuration': sim_duration, 'updatePeriodicity': step_duration}
 
 mempool_key = 1234  # memory pool key, arbitrary integer large than 1000
-mem_size = 4096  # memory pool size in bytes
+mem_size = 40960  # memory pool size in bytes
 memblock_key = 2333  # memory block key, need to keep the same in the ns-3 script
 exp = Experiment(mempool_key, mem_size, 'ran-ai', '../../')  # Set up the ns-3 environment
 
 # Learning agent
 
-state_dim = len(state_features)  # State size
-action_num = len(actions)  # Number of actions
+state_dim = len(state_features) + len(pdr_features)  # State size
 
 agent = Agent(state_dim=state_dim, action_num=action_num,
-              step_num=step_num, episode_num=episode_num,
-              state_labels=state_features, action_labels=actions,
+              step_num=step_num, episode_num=episode_num, user_num=user_num,
+              state_labels=state_labels, action_labels=action_keys,
               state_normalization=state_normalization,
               gamma=0.9, batch_size=16, target_replace=200, memory_capacity=200,
               learning_rate=0.0001, eps=0.0001, weight_decay=0.0001)
 
 data_folder = 'output/test/'  # Output folder
-if not os.path.exists(data_folder):
-    os.makedirs(data_folder)
+for user_idx in range(user_num):
+    user_folder = data_folder + 'user_' + str(user_idx) + '/'
+    if not os.path.exists(user_folder):
+        os.makedirs(user_folder)
 
 simulation_time = 0
 
@@ -131,9 +187,9 @@ if train:
 
             pro = exp.run(setting=ns3Settings, show_output=True)  # Set and run the ns-3 script (sim.cc)
 
-            state = None
+            states = None
             q_values = None
-            action_idx = None
+            action_indexes = None
             step = -1
             temp = temperatures[episode]
 
@@ -144,16 +200,33 @@ if train:
 
                     step += 1
 
-                    new_state, reward = state_process(data.env, env_normalization, state_features, state_dim)
+                    new_states, state_imsi_list = state_process(data.env.imsiStatsMap,
+                                                                state_feature_indexes,
+                                                                state_feature_normalization,
+                                                                pdr_indexes,
+                                                                pdr_normalization,
+                                                                state_dim,
+                                                                user_num)
 
-                    if state is not None:
-                        agent.update(action_idx, q_values, reward, new_state, temp)
+                    rewards, reward_imsi_list = reward_process(data.env.imsiStatsMap,
+                                                               pdr_indexes,
+                                                               last_action_indexes,
+                                                               action_bonus,
+                                                               user_num)
 
-                    state = np.copy(new_state)
-                    action_idx, q_values = agent.get_action(state, temp)
+                    if states is not None:
+                        agent.update(action_indexes, q_values, rewards, new_states, temp)
 
-                    action = actions[action_idx]
-                    data.act.action = action
+                    states = [np.copy(new_state) for new_state in new_states]
+
+                    action_indexes, q_values = agent.get_action(states, temp)
+
+                    for user_idx, action_idx in enumerate(action_indexes):
+                        imsi = data.env.imsiStatsMap[user_idx][0]
+                        action = action_keys[action_idx]
+                        data.act.actions[user_idx][0] = int(imsi)
+                        data.act.actions[user_idx][1] = action
+                        last_action_indexes[user_idx] = action_idx
 
             pro.wait()  # Wait the ns-3 to stop
 
@@ -171,8 +244,6 @@ if train:
         FreeMemory()
 
     print("Total episode ", episode_num, "; time duration ", simulation_time)
-
-    # Plot the output data
 
     agent.save_data(data_folder)
 
