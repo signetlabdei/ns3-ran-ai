@@ -120,59 +120,83 @@ main (int argc, char *argv[])
     }
 
   Ptr<GemvPropagationLossModel> gemv = CreateObject<GemvPropagationLossModel> ();
-  
-  char buffer [256];
+
+  char buffer[256];
   std::cout << "Current path is " << getcwd (buffer, sizeof (buffer)) << std::endl;
   gemv->SetPath (gemvTracesPath);
   Time timeRes = MilliSeconds (100);
   gemv->SetTimeResolution (timeRes);
   Time maxSimTime = gemv->GetMaxSimulationTime ();
-  if ( Seconds(simDuration) <= maxSimTime )
-  {
-    maxSimTime = Seconds (simDuration);
-  }
+  if (Seconds (simDuration) <= maxSimTime)
+    {
+      maxSimTime = Seconds (simDuration);
+    }
   else
-  {
-    NS_LOG_WARN("The simulation duration cannot exceed the duration of the traces.");
-  }
+    {
+      NS_LOG_WARN ("The simulation duration cannot exceed the duration of the traces.");
+    }
   gemv->SetAttribute ("IncludeSmallScale", BooleanValue (true));
 
-  std::vector<uint16_t> rsuList = gemv->GetDistinctIds(true);
-  std::vector<uint16_t> ueList = gemv->GetDistinctIds(false);
+  std::vector<uint16_t> rsuList = gemv->GetDistinctIds (true);
+  std::vector<uint16_t> ueList = gemv->GetDistinctIds (false);
 
-  std::cout << ueList.size ()<< std::endl;
   NS_ABORT_MSG_IF (ueList.size () < numUes, "Too many UEs");
-  
-  NodeContainer rsuNodes;  
+
+  NodeContainer rsuNodes;
   NodeContainer ueNodes;
-  
-  for (const auto& i : rsuList)
-  {
-    // create the RSU node and add it to the container
-    Ptr<Node> n = CreateObject<Node> ();
-    rsuNodes.Add (n);
-    
-    // create the gemv tag and aggrgate it to the node
-    Ptr<GemvTag> tag = CreateObject<GemvTag>();
-    tag->SetTagId(i);
-    tag->SetNodeType(true);
-    n->AggregateObject (tag);
-  }
+
+  for (const auto &i : rsuList)
+    {
+      // create the RSU node and add it to the container
+      Ptr<Node> n = CreateObject<Node> ();
+      rsuNodes.Add (n);
+
+      // create the gemv tag and aggrgate it to the node
+      Ptr<GemvTag> tag = CreateObject<GemvTag> ();
+      tag->SetTagId (i);
+      tag->SetNodeType (true);
+      n->AggregateObject (tag);
+    }
   std::cout << "Number of RSU nodes: " << rsuNodes.GetN () << std::endl;
   NS_ABORT_MSG_IF (rsuNodes.GetN () > 1, "This example works with a single RSU");
 
-  for (size_t i = firstVehicleIndex; i < firstVehicleIndex + numUes; i++)
+  Ptr<UniformRandomVariable> urv = CreateObject<UniformRandomVariable> ();
+  uint16_t tagID;
+
+  for (uint32_t i = 0; i < numUes; i++)
   {
+    if (i == 0)
+    {
+      // the ID of the first node (target) is equal to firstVehicleIndex
+      tagID = firstVehicleIndex;
+      auto it = std::find (ueList.begin (), ueList.end (), tagID);
+      ueList.erase (it);
+    }
+    else if (ueList.size() == 1)
+    {
+      tagID = ueList.at (0); // when there is only one item, there is no need to drawn an index
+    }
+    else
+    {
+      auto id = urv->GetInteger(0, ueList.size());
+      tagID = ueList.at (id);
+      auto it = std::find (ueList.begin (), ueList.end (), tagID);
+      ueList.erase (it);
+    }
+
+    NS_LOG_DEBUG ("Add ID " << +tagID << " in position " << +i);
     // create the vehicular node and add it to the container
     Ptr<Node> n = CreateObject<Node> ();
     ueNodes.Add (n);
-    
-    // create the gemv tag and aggrgate it to the node
-    Ptr<GemvTag> tag = CreateObject<GemvTag>();
-    tag->SetTagId (ueList.at (i % MAX_NUM_USERS));
+
+    // create the gemv tag and aggregate it to the node
+    Ptr<GemvTag> tag = CreateObject<GemvTag> ();
+    tag->SetTagId (tagID);
     tag->SetNodeType (false);
     n->AggregateObject (tag);
+    std::cout << "Node " << i << " has tagID " << tagID << std::endl;
   }
+
   std::cout << "Number of UE nodes: " << ueNodes.GetN () << std::endl;
   NS_ABORT_MSG_IF (ueNodes.GetN () < 1, "At least one UE is required");
 
@@ -241,7 +265,7 @@ main (int argc, char *argv[])
   uint16_t ulPort = 2000;
   ApplicationContainer clientApps;
   ApplicationContainer serverApps;
-  Ptr<BurstyAppStatsCalculator> statsCalculator = CreateObject<BurstyAppStatsCalculator>();
+  Ptr<BurstyAppStatsCalculator> statsCalculator = CreateObject<BurstyAppStatsCalculator> ();
   Time ulIpi = MicroSeconds (ulIpiMicroS);
   Time dlIpi = MicroSeconds (dlIpiMicroS);
 
@@ -260,7 +284,6 @@ main (int argc, char *argv[])
       dlClient.SetAttribute ("MaxPackets", UintegerValue (0xFFFFF));
 
       clientApps.Add (dlClient.Install (remoteHost));
-
 
       // Set up UL Application
 
@@ -283,24 +306,29 @@ main (int argc, char *argv[])
           BurstyHelper burstyHelper ("ns3::UdpSocketFactory",
                                      InetSocketAddress (remoteHostAddr, ulPort));
           burstyHelper.SetAttribute ("FragmentSize", UintegerValue (1200));
-          burstyHelper.SetBurstGenerator ("ns3::KittiTraceBurstGenerator", "TraceFile", StringValue (appTracesPath));
+          burstyHelper.SetBurstGenerator ("ns3::KittiTraceBurstGenerator", "TraceFile",
+                                          StringValue (appTracesPath));
+          burstyHelper.SetBurstGenerator ("ns3::KittiTraceBurstGenerator", "Scene",
+                                          IntegerValue (urv->GetInteger (1, 9)));
+          burstyHelper.SetBurstGenerator ("ns3::KittiTraceBurstGenerator", "ReadingMode",
+                                          IntegerValue (1));
 
           ApplicationContainer appContainer = burstyHelper.Install (ueNodes.Get (u));
           clientApps.Add (appContainer.Get (0));
 
           // Retrieve node IMSI and add application pointer to map
-          auto imsi = DynamicCast<MmWaveUeNetDevice>(ueNodes.Get (u)->GetDevice(0))->GetImsi();
+          auto imsi = DynamicCast<MmWaveUeNetDevice> (ueNodes.Get (u)->GetDevice (0))->GetImsi ();
           imsiApplication.insert (std::make_pair (imsi, appContainer.Get (0)));
 
-          Ptr<BurstyApplication> burstyApp = DynamicCast<BurstyApplication>  (appContainer.Get (0)); // obtain the last one inserted
-          burstyApp->TraceConnectWithoutContext ("BurstTx", MakeBoundCallback (&TxBurstCallback, ueNodes.Get (u)->GetId(), statsCalculator));
+          Ptr<BurstyApplication> burstyApp = DynamicCast<BurstyApplication> (appContainer.Get (0)); // obtain the last one inserted
+          burstyApp->TraceConnectWithoutContext ("BurstTx", MakeBoundCallback (&TxBurstCallback, ueNodes.Get (u)->GetId (), statsCalculator));
 
           // Create burst sink helper
           BurstSinkHelper burstSinkHelper ("ns3::UdpSocketFactory",
                                            InetSocketAddress (Ipv4Address::GetAny (), ulPort));
           // Install bursty sink
           serverApps.Add (burstSinkHelper.Install (remoteHost));
-          Ptr<BurstSink> burstSink = DynamicCast<BurstSink> (serverApps.Get ( serverApps.GetN() - 1 )); // obtain the last one inserted
+          Ptr<BurstSink> burstSink = DynamicCast<BurstSink> (serverApps.Get (serverApps.GetN () - 1)); // obtain the last one inserted
 
           // Connect application traces
           burstSink->TraceConnectWithoutContext ("BurstRx", MakeBoundCallback (&RxBurstCallback, imsi, statsCalculator));
@@ -331,20 +359,20 @@ main (int argc, char *argv[])
   mmWaveHelper->EnableRlcTraces ();
   mmWaveHelper->EnablePdcpTraces ();
   if (writeToFile)
-  {
-    mmWaveHelper->EnableDlPhyTrace ();
-    mmWaveHelper->EnableUlPhyTrace ();
-  }
+    {
+      mmWaveHelper->EnableDlPhyTrace ();
+      mmWaveHelper->EnableUlPhyTrace ();
+    }
   if (installRanAI)
-  {
-    mmWaveHelper->InstallRanAI (rsuDevs, imsiApplication, statsCalculator);
-  }
-  
+    {
+      mmWaveHelper->InstallRanAI (rsuDevs, imsiApplication, statsCalculator);
+    }
+
   Time simTime = maxSimTime - Seconds (1.0);
   std::cout << "Max simulation time: " << maxSimTime.GetSeconds () << " s" << "\n";
   std::cout << "Actual simulation time: " << simTime.GetSeconds () << " s" << "\n";
-  Simulator::Stop(simTime); 
-  Simulator::Run();
+  Simulator::Stop (simTime);
+  Simulator::Run ();
 
   Simulator::Destroy ();
   return 0;
