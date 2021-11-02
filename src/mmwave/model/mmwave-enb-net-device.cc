@@ -59,6 +59,8 @@
 #include <ns3/bursty-application.h>
 #include <ns3/kitti-trace-burst-generator.h>
 #include <ns3/bursty-app-stats-calculator.h>
+#include <ns3/eps-bearer-tag.h>
+#include <ns3/kitti-header.h>
 
 namespace ns3 {
 
@@ -95,6 +97,12 @@ TypeId MmWaveEnbNetDevice::GetTypeId ()
                    TimeValue (MilliSeconds (100)),
                    MakeTimeAccessor (&MmWaveEnbNetDevice::m_statusUpdate),
                    MakeTimeChecker ())
+    .AddAttribute ("IdealActionUpdate",
+                   "Whether to automatically notify the action to the user application (true)"
+                   "or to send a packet carrying the selected action through the channel",
+                   BooleanValue (true),
+                   MakeBooleanAccessor (&MmWaveEnbNetDevice::m_idealActionUpdate),
+                   MakeBooleanChecker ())
   ;
   return tid;
 }
@@ -453,25 +461,89 @@ MmWaveEnbNetDevice::SendStatusUpdate ()
   // propagate actions to all UEs
   for (const auto& i: actions)
   {
-    // Retrieve pointer to application associated to IMSI
-    auto app = m_imsiApp.find(i.first);
-    if (app != m_imsiApp.end())
-    {
-      Ptr<BurstyApplication> bursty = (app->second)->GetObject<BurstyApplication>();
+    auto it = m_lastAction.find(i.first);
+    bool update = true;
 
-      // Propagate the action to the application associated to this IMSI
-      Ptr<KittiTraceBurstGenerator> burstGenerator = DynamicCast<KittiTraceBurstGenerator> (DynamicCast<BurstyApplication> (app->second)->GetBurstGenerator ());
-      NS_LOG_DEBUG ("Action is set to " << i.second << " for IMSI " << i.first);
-      burstGenerator->SetModel(i.second);
+    if (it != m_lastAction.end())
+    {
+      // there was something stored about *rnti*, check if new action is same of the old one or not
+      if (it->second == i.second)
+      {
+        // old one and new one are the same, do not send message to the user
+        update = false;
+      }
+      else
+      {
+        // update the entry and send the update to the user
+        it->second = i.second;
+      }
     }
     else
     {
-      NS_LOG_UNCOND ("Cannot find an application associated to IMSI " << i.first);
+      // nothing stored about this user, communicate the action
+      m_lastAction [i.first] = i.second;
+    }
+
+    if (update)
+    {
+      if (m_idealActionUpdate)
+      {
+        NotifyActionIdeal (i.first, i.second);
+      }
+      else
+      {
+        NotifyActionReal (i.first, i.second);
+      }
     }
   }
 
   // Schedule next status update
   Simulator::Schedule (m_statusUpdate, &MmWaveEnbNetDevice::SendStatusUpdate, this);
+}
+
+void
+MmWaveEnbNetDevice::NotifyActionIdeal (uint16_t imsi, uint16_t action)
+{
+  NS_LOG_FUNCTION(this);
+  // Retrieve pointer to application associated to IMSI
+  auto app = m_imsiApp.find (imsi);
+  if (app != m_imsiApp.end ())
+    {
+      Ptr<BurstyApplication> bursty = (app->second)->GetObject<BurstyApplication> ();
+
+      // Propagate the action to the application associated to this IMSI
+      Ptr<KittiTraceBurstGenerator> burstGenerator = DynamicCast<KittiTraceBurstGenerator> (
+          DynamicCast<BurstyApplication> (app->second)->GetBurstGenerator ());
+      NS_LOG_DEBUG ("Action is set to " << action << " for IMSI "
+                                        << imsi);
+      burstGenerator->SetModel (action);
+    }
+  else
+    {
+      NS_LOG_UNCOND ("Cannot find an application associated to IMSI " << imsi);
+    }
+}
+
+void
+MmWaveEnbNetDevice::NotifyActionReal (uint16_t imsi, uint16_t action)
+{
+  NS_LOG_FUNCTION (this);
+  uint16_t rnti = m_rrc->GetRntiFromImsi (imsi);
+
+  Ptr<Packet> pkt =
+      Create<Packet> (40); // TODO: check what is the minimum packet size for the kitti header
+  KittiHeader kitti;
+
+  kitti.SetAction (action);
+  kitti.SetImsi (imsi);
+  kitti.SetRnti (rnti);
+  pkt->AddHeader (kitti);
+  EpsBearerTag tag = EpsBearerTag (rnti, 1);
+  pkt->AddPacketTag (tag);
+
+  NS_LOG_DEBUG (Simulator::Now () << " " << pkt->GetUid () << " " << pkt->GetSize () << " RNTI "
+                                  << rnti << " action " << action);
+  DoSend (pkt, Address (), Ipv4L3Protocol::PROT_NUMBER);
 }
 
 }

@@ -307,9 +307,7 @@ Node::ReceiveFromDevice (Ptr<NetDevice> device, Ptr<const Packet> packet, uint16
   NS_ASSERT_MSG (Simulator::GetContext () == GetId (), "Received packet with erroneous context ; " <<
                  "make sure the channels in use are correctly updating events context " <<
                  "when transferring events from one node to another.");
-  NS_LOG_DEBUG ("Node " << GetId () << " ReceiveFromDevice:  dev "
-                        << device->GetIfIndex () << " (type=" << device->GetInstanceTypeId ().GetName ()
-                        << ") Packet UID " << packet->GetUid ());
+
   bool found = false;
 
   for (ProtocolHandlerList::iterator i = m_handlers.begin ();

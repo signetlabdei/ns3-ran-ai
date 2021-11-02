@@ -40,7 +40,9 @@
 #include "ns3/uinteger.h"
 #include "ns3/mmwave-component-carrier.h"
 #include <ns3/object-map.h>
-
+#include <ns3/kitti-header.h>
+#include <ns3/kitti-trace-burst-generator.h>
+#include <ns3/bursty-application.h>
 
 namespace ns3 {
 
@@ -232,16 +234,40 @@ MmWaveNetDevice::Receive (Ptr<Packet> p)
   NS_LOG_FUNCTION (this << p);
   Ipv4Header ipv4Header;
   Ipv6Header ipv6Header;
+  KittiHeader kittiHdr; 
 
   if (p->PeekHeader (ipv4Header) != 0)
     {
       NS_LOG_LOGIC ("IPv4 stack...");
-      m_rxCallback (this, p, Ipv4L3Protocol::PROT_NUMBER, Address ());
+      m_rxCallback (this, p, Ipv4L3Protocol::PROT_NUMBER, Address ());      
+      
     }
   else if  (p->PeekHeader (ipv6Header) != 0)
     {
       NS_LOG_LOGIC ("IPv6 stack...");
       m_rxCallback (this, p, Ipv6L3Protocol::PROT_NUMBER, Address ());
+    }
+  else if (p->PeekHeader (kittiHdr) != 0)
+    {
+      NS_LOG_UNCOND ("Kitti Header retrieved on node with " << m_node->GetNApplications () << " apps");
+      p->RemoveHeader(kittiHdr);
+
+      // Check among all applications installed in this node if there is the application, compatible
+      // with the KittiHeader; if it is not found, then there could an error, so the simulation is aborted.
+      bool foundKittApp = false;
+      for (uint32_t i = 0; i < m_node->GetNApplications (); i++)
+      {
+        if (DynamicCast<BurstyApplication> (m_node->GetApplication (i)) != NULL)
+        {
+          Ptr<KittiTraceBurstGenerator> burstGenerator = DynamicCast<KittiTraceBurstGenerator> (
+              DynamicCast<BurstyApplication> (m_node->GetApplication (i))->GetBurstGenerator ());
+          NS_LOG_UNCOND ("Action " << kittiHdr.GetAction() << " is set for NodeID " << m_node->GetId () << " IMSI " << kittiHdr.GetImsi() << " RNTI " << kittiHdr.GetRnti ());
+          burstGenerator->SetModel (kittiHdr.GetAction ());
+          foundKittApp = true;
+          break;
+        }
+      }
+      NS_ABORT_MSG_IF(!foundKittApp, "Not found Kitti Application, packet sent to wrong user or something is broken.");
     }
   else
     {

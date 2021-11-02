@@ -20,9 +20,9 @@ class LinearNeuralNetwork(Module, ABC):
 
         # Linear layers
 
-        self.linear_1 = torch.nn.Linear(input_dim, 6)
-        self.linear_2 = torch.nn.Linear(6, 4)
-        self.linear_3 = torch.nn.Linear(4, output_dim)
+        self.linear_1 = torch.nn.Linear(input_dim, 12)
+        self.linear_2 = torch.nn.Linear(12, 6)
+        self.linear_3 = torch.nn.Linear(6, output_dim)
 
         # Layer initialization
 

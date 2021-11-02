@@ -1,189 +1,195 @@
-from ctypes import *
 from py_interface import *
+from settings import *
 import numpy as np
 import time
 import os
-from Agent.Agent import Agent
-from Agent.StateProcessing import state_process, reward_process
+from Agent.Agent import CentralizedAgent
+from Agent.StateProcessing import state_process
+from Agent.RewardProcessing import reward_process
+import argparse
 
+parser = argparse.ArgumentParser()
 
-# The environment is shared between ns-3
-# and python with the same shared memory
-# using the ns3-ai model.
+parser.add_argument('-train', '--train', action='store_const', const=True, default=False)
+parser.add_argument('-test', '--test', action='store_const', const=True, default=False)
+parser.add_argument('-run', '--run', action='store_const', const=True, default=False)
+parser.add_argument('-policy', '--agent_policy', type=str, default='dql')
 
-class Env(Structure):
-    _pack_ = 1
-    _fields_ = [
-        ('imsiStatsMap', (c_double * 28) * 50)
-    ]
+parser.add_argument('-input_user', '--input_user_num', type=int, default=None)
 
+parser.add_argument('-input_penalty', '--input_reward_penalty', type=float, default=None)
+parser.add_argument('-input_episode', '--input_episode_num', type=int, default=None)
+parser.add_argument('-input_step', '--input_step_num', type=int, default=None)
+parser.add_argument('-input_update', '--input_update', type=float, default=None)
 
-env_features = ['imsi',
-                'mcs',
-                'symbols',
-                'sinr',
+parser.add_argument('-user', '--user_num', type=int, default=1)
+parser.add_argument('-penalty', '--reward_penalty', type=float, default=0)
+parser.add_argument('-episode', '--episode_num', type=int, default=1000)
+parser.add_argument('-step', '--step_num', type=int, default=500)
+parser.add_argument('-update', '--update', type=str, default='real')
 
-                'rlc_tx_pkt',
-                'rlc_tx_data',
-                'rlc_rx_pkt',
-                'rlc_rx_data',
+args = vars(parser.parse_args())
 
-                'rlc_delay_mean',
-                'rlc_delay_stdev',
-                'rlc_delay_min',
-                'rlc_delay_max',
+algorithm_training = args['train']
+algorithm_testing = args['test']
+agent_policy = args['agent_policy']
+if algorithm_training:
+    assert agent_policy == 'dql'
 
-                'pdcp_tx_pkt',
-                'pdcp_tx_data',
-                'pdcp_rx_pkt',
-                'pdcp_rx_data',
+user_num = args['user_num']  # Number of users
+reward_penalty = args['reward_penalty']  # Reward penalty when QoS is violated
+episode_num = args['episode_num']  # Number of episodes
+step_num = args['step_num']  # Number of steps per episode
+# Determine if the agent actions are updated through a ideal update
+if args['update'] == 'ideal':
+    ideal_update = True
+elif args['update'] == 'real':
+    ideal_update = False
+else:
+    raise ValueError
 
-                'pdcp_delay_mean',
-                'pdcp_delay_stdev',
-                'pdcp_delay_min',
-                'pdcp_delay_max',
+if args['input_user_num'] is None:
+    input_user_num = user_num
+else:
+    input_user_num = args['input_user_num']
+if args['input_reward_penalty'] is None:
+    input_reward_penalty = reward_penalty
+else:
+    input_reward_penalty = args['input_reward_penalty']
+if args['input_episode_num'] is None:
+    input_episode_num = episode_num
+else:
+    input_episode_num = args['input_episode_num']
+if args['input_step_num'] is None:
+    input_step_num = step_num
+else:
+    input_step_num = args['input_step_num']
+if args['input_update'] is None:
+    input_ideal_update = ideal_update
+else:
+    if args['input_update'] == 'ideal':
+        input_ideal_update = True
+    elif args['update'] == 'real':
+        input_ideal_update = False
+    else:
+        raise ValueError
 
-                'app_tx_pkt',
-                'app_tx_data',
-                'app_rx_pkt',
-                'app_rx_data',
+st = 0.95
+a = int(episode_num / 10)
+b = episode_num + a
 
-                'app_delay_mean',
-                'app_delay_stdev',
-                'app_delay_min',
-                'app_delay_max'
-                ]
+temperatures = (np.flip(np.arange(a, b))) / (b + b * (1 - st ** 2) / (st ** 2))
+temperatures[:int(episode_num / 3)] **= 0.5
+temperatures[int(episode_num / 3):int(2 * episode_num / 3)] **= 0.75
+temperatures[int(2 * episode_num / 3):] **= 1
 
-env_normalization = {'imsi': None,
-                     'mcs': (0, 28),
-                     'symbols': (0, 12),
-                     'sinr': (0, 60),
-
-                     'rlc_tx_pkt': (0, 1),
-                     'rlc_tx_data': (0, 1),
-                     'rlc_rx_pkt': (0, 1),
-                     'rlc_rx_data': (0, 1),
-
-                     'rlc_delay_mean': (0, 100000000),
-                     'rlc_delay_stdev': (0, 100000000),
-                     'rlc_delay_min': (0, 100000000),
-                     'rlc_delay_max': (0, 100000000),
-
-                     'pdcp_tx_pkt': (0, 1),
-                     'pdcp_tx_data': (0, 1),
-                     'pdcp_rx_pkt': (0, 1),
-                     'pdcp_rx_data': (0, 1),
-
-                     'pdcp_delay_mean': (0, 100000000),
-                     'pdcp_delay_stdev': (0, 100000000),
-                     'pdcp_delay_min': (0, 100000000),
-                     'pdcp_delay_max': (0, 100000000),
-
-                     'app_tx_pkt': (0, 1),
-                     'app_tx_data': (0, 1),
-                     'app_rx_pkt': (0, 1),
-                     'app_rx_data': (0, 1),
-
-                     'app_delay_mean': (0, 100000000),
-                     'app_delay_stdev': (0, 100000000),
-                     'app_delay_min': (0, 100000000),
-                     'app_delay_max': (0, 100000000)
-                     }
-
-
-# The result is calculated by python
-# and put back to ns-3 with the shared memory.
-
-class Act(Structure):
-    _pack_ = 1
-    _fields_ = [
-        ('actions', (c_int16 * 2) * 50)
-    ]
-
-
-user_num = 2
-episode_num = 20  # Number of episodes
-step_num = 100  # Number of steps per episode
-temperatures = np.flip(np.arange(episode_num)) / episode_num  # Temperatures (for the epsilon greedy policy)
 step_duration = 100  # Duration of a step [ms]
 sim_duration = step_num * step_duration / 1000  # Duration of the simulation [s]
 
-state_labels = ['MCS', 'Symbols', 'SINR', 'Mean delay [ms]', 'Max delay  [ms]', 'PDR']
-state_normalization = [(0, 28), (0, 12), (0, 60), (0, 100), (0, 1000), (0, 1)]
+action_keys = [1150, 2, 1450, 1452]
 
-state_features = ['mcs',
-                  'symbols',
-                  'sinr',
-                  'pdcp_delay_mean',
-                  'pdcp_delay_max']
+default_action_index = None
 
-pdr_features = [('pdcp_rx_data',
-                 'pdcp_tx_data')]
+if agent_policy != 'dql':
 
-state_feature_normalization = [env_normalization[feature] for feature in state_features]
+    if agent_policy != 'random':
+        default_action_index = action_keys.index(int(agent_policy))
 
-pdr_normalization = [(0, 1), (0, 1)]
-
-state_feature_indexes = []
-
-for feature in state_features:
-    state_feature_indexes.append(env_features.index(feature))
-
-pdr_indexes = []
-
-for num, den in pdr_features:
-    pdr_indexes.append((env_features.index(num), env_features.index(den)))
-
-action_keys = [1, 2, 1452]
 action_num = len(action_keys)
 
-cf_mean_per_action = {1150: 0.002492, 1450: 0.000044, 1451: 5.476881, 1452: 35.634660, 1: 5.476811, 2: 35.634485}
 action_indexes = range(action_num)
-action_bonus = [cf_mean_per_action[action] for action in action_keys]
+action_penalties = [cf_mean_per_action[action] for action in action_keys]
 last_action_indexes = [0] * user_num
 
-# Python-ns3 interface
+max_penalty = reward_penalty + np.max(action_penalties)
 
-ns3Settings = {'numUes': user_num, 'simDuration': sim_duration, 'updatePeriodicity': step_duration}
-
-mempool_key = 1234  # memory pool key, arbitrary integer large than 1000
-mem_size = 40960  # memory pool size in bytes
-memblock_key = 2333  # memory block key, need to keep the same in the ns-3 script
-exp = Experiment(mempool_key, mem_size, 'ran-ai', '../../')  # Set up the ns-3 environment
+if user_num > 1:
+    delay_requirement = mapsharing_delay_requirement
+else:
+    delay_requirement = teleoperated_delay_requirement
 
 # Learning agent
 
-state_dim = len(state_features) + len(pdr_features)  # State size
+agent = CentralizedAgent(state_dim=state_dim, action_num=action_num,
+                         step_num=step_num, episode_num=episode_num, user_num=user_num,
+                         state_labels=state_labels, action_labels=action_keys,
+                         state_normalization=state_normalization, state_mask=state_mask,
+                         gamma=0.95, batch_size=10, target_replace=step_num * 10, memory_capacity=10000,
+                         learning_rate=0.00001, eps=0.001, weight_decay=0.0001)
 
-agent = Agent(state_dim=state_dim, action_num=action_num,
-              step_num=step_num, episode_num=episode_num, user_num=user_num,
-              state_labels=state_labels, action_labels=action_keys,
-              state_normalization=state_normalization,
-              gamma=0.9, batch_size=16, target_replace=200, memory_capacity=200,
-              learning_rate=0.0001, eps=0.0001, weight_decay=0.0001)
+if ideal_update:
+    scenario_name = 'ideal_update/'
+else:
+    scenario_name = 'real_update/'
 
-data_folder = 'output/test/'  # Output folder
+scenario_name += str(user_num) + '_user' + '/penalty=' + str(reward_penalty) + '/' + str(
+    episode_num) + '_episode/' + str(step_num) + '_step/'
+
+if algorithm_training:
+
+    print("TRAINING")
+
+    data_folder = 'output/train/' + scenario_name  # Output folder
+
+elif algorithm_testing:
+
+    print("TESTING")
+
+    data_folder = 'output/test/' + agent_policy + '/' + scenario_name  # Output folder
+
+    if agent_policy == 'dql':
+
+        if input_ideal_update:
+            input_scenario_name = 'ideal_update/'
+        else:
+            input_scenario_name = 'real_update/'
+
+        input_scenario_name += str(input_user_num) + '_user' + '/penalty=' + str(input_reward_penalty) + '/' + str(
+            input_episode_num) + '_episode/' + str(input_step_num) + '_step/'
+
+        input_folder = 'output/train/' + input_scenario_name  # Input folder
+        agent.load_model(input_folder)  # Load the learning architecture
+
+else:
+
+    raise ValueError
+
 for user_idx in range(user_num):
-    user_folder = data_folder + 'user_' + str(user_idx) + '/'
+    user_folder = data_folder + str(user_idx) + '/'
     if not os.path.exists(user_folder):
         os.makedirs(user_folder)
 
 simulation_time = 0
 
-train = True
+if args['run']:
 
-if train:
+    # Python-ns3 interface
+
+    ns3Settings = {'numUes': user_num, 'simDuration': sim_duration, 'updatePeriodicity': step_duration,
+                   'idealActionUpdate': ideal_update}
+
+    mempool_key = 1234  # memory pool key, arbitrary integer large than 1000
+    mem_size = 40960  # memory pool size in bytes
+    memblock_key = 2333  # memory block key, need to keep the same in the ns-3 script
+    exp = Experiment(mempool_key, mem_size, 'ran-ai', '../../')  # Set up the ns-3 environment
+
+    print("Running...")
 
     try:
         for episode in range(episode_num):
 
-            start_time = time.time()
+            if episode > 0 and episode % int(episode_num / 10) == 0:
+                agent.save_data(data_folder)
+                agent.save_model(data_folder)
+                agent.plot_data(data_folder, episode_num)
+
+            episode_start_time = time.time()
 
             exp.reset()  # Reset the environment
             agent.reset()  # Reset the agent
             rl = Ns3AIRL(memblock_key, Env, Act)  # Link the shared memory block with ns-3 script
 
-            ns3Settings['firstVehicleIndex'] = np.random.randint(50)
+            ns3Settings['firstVehicleIndex'] = np.random.randint(1, 50)
 
             pro = exp.run(setting=ns3Settings, show_output=True)  # Set and run the ns-3 script (sim.cc)
 
@@ -191,7 +197,11 @@ if train:
             q_values = None
             action_indexes = None
             step = -1
-            temp = temperatures[episode]
+
+            if algorithm_training:
+                temp = temperatures[episode]
+            else:
+                temp = 0
 
             while not rl.isFinish():
                 with rl as data:
@@ -203,23 +213,43 @@ if train:
                     new_states, state_imsi_list = state_process(data.env.imsiStatsMap,
                                                                 state_feature_indexes,
                                                                 state_feature_normalization,
-                                                                pdr_indexes,
-                                                                pdr_normalization,
+                                                                combination_feature_indexes,
+                                                                combination_feature_normalization,
                                                                 state_dim,
                                                                 user_num)
 
-                    rewards, reward_imsi_list = reward_process(data.env.imsiStatsMap,
-                                                               pdr_indexes,
-                                                               last_action_indexes,
-                                                               action_bonus,
-                                                               user_num)
+                    rewards, qos_per_user, qoe_per_user, reward_imsi_list = reward_process(data.env.imsiStatsMap,
+                                                                                           app_pdr_indexes,
+                                                                                           app_delay_mean_index,
+                                                                                           delay_requirement,
+                                                                                           last_action_indexes,
+                                                                                           action_penalties,
+                                                                                           user_num,
+                                                                                           max_penalty)
 
                     if states is not None:
-                        agent.update(action_indexes, q_values, rewards, new_states, temp)
+                        agent.update(action_indexes,
+                                     q_values,
+                                     rewards,
+                                     new_states,
+                                     qos_per_user,
+                                     qoe_per_user,
+                                     temp,
+                                     algorithm_training)
 
                     states = [np.copy(new_state) for new_state in new_states]
 
                     action_indexes, q_values = agent.get_action(states, temp)
+
+                    if agent_policy != 'dql':
+
+                        if default_action_index is not None:
+
+                            action_indexes = [default_action_index] * user_num
+
+                        else:
+
+                            action_indexes = list(np.random.randint(0, action_num, user_num))
 
                     for user_idx, action_idx in enumerate(action_indexes):
                         imsi = data.env.imsiStatsMap[user_idx][0]
@@ -228,15 +258,19 @@ if train:
                         data.act.actions[user_idx][1] = action
                         last_action_indexes[user_idx] = action_idx
 
+            episode_end_time = time.time()
+
+            useful_time = episode_end_time - episode_start_time
+
             pro.wait()  # Wait the ns-3 to stop
 
-            end_time = time.time()
+            episode_end_time = time.time()
 
-            episode_time = end_time - start_time
+            total_time = episode_end_time - episode_start_time
 
-            print("Episode ", episode, "; time duration ", episode_time)
+            print("Episode ", episode, "; time duration ", useful_time, "; total time ", total_time)
 
-            simulation_time += episode_time
+            simulation_time += total_time
 
     finally:
         exp.kill()
@@ -246,6 +280,7 @@ if train:
     print("Total episode ", episode_num, "; time duration ", simulation_time)
 
     agent.save_data(data_folder)
+    agent.save_model(data_folder)
 
 agent.load_data(data_folder)
 agent.plot_data(data_folder, episode_num)

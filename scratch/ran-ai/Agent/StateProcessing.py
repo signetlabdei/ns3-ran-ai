@@ -49,33 +49,3 @@ def state_process(env_features: Structure,
             states[user_idx][state_idx + feature_num] = feature
 
     return states, imsi_list
-
-
-def reward_process(env_features: Structure,
-                   pdr_feature_indexes: [],
-                   last_actions: [int],
-                   bonus_per_action: [float],
-                   user_num: int):
-
-    rewards = [0] * user_num
-    imsi_list = []
-
-    for user_idx in range(user_num):
-
-        imsi_list.append(int(env_features[user_idx][0]))
-
-        for state_idx, comb_indexes in enumerate(pdr_feature_indexes):
-
-            num_idx, den_idx = comb_indexes
-            num, den = env_features[user_idx][num_idx], env_features[user_idx][den_idx]
-
-            if den <= 0:
-                feature = 1
-            else:
-                feature = num / den
-
-            if feature >= 1:
-
-                rewards[user_idx] = bonus_per_action[last_actions[user_idx]]
-
-    return rewards, imsi_list

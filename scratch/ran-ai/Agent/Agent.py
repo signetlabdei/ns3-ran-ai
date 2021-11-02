@@ -7,7 +7,7 @@ from Agent.NeuralNetwork import LinearNeuralNetwork
 from Agent.Linearplot import linear_plot, multi_linear_plot
 
 
-class Agent(object):
+class CentralizedAgent(object):
     """
     class Agent
     It implements a learning Agent that has to manage a certain environment
@@ -23,6 +23,7 @@ class Agent(object):
                  state_labels: [str],
                  action_labels: [str],
                  state_normalization: [[]],
+                 state_mask: np.ndarray,
                  gamma: float,
                  batch_size: int,
                  target_replace: int,
@@ -38,6 +39,8 @@ class Agent(object):
         # State dimension
 
         self.state_dim: int = state_dim
+        self.learning_state_dim: int = np.sum(state_mask)
+        self.state_mask: np.ndarray = state_mask
 
         # Number of possible actions in each state
 
@@ -57,8 +60,8 @@ class Agent(object):
         # The primary network is used to choose new actions
         # The target network is used to predict the future q values
 
-        self.primary_net: Module = LinearNeuralNetwork(state_dim, self.action_num)
-        target_net: Module = LinearNeuralNetwork(state_dim, self.action_num)
+        self.primary_net: Module = LinearNeuralNetwork(self.learning_state_dim, self.action_num)
+        target_net: Module = LinearNeuralNetwork(self.learning_state_dim, self.action_num)
         target_net.load_state_dict(self.primary_net.state_dict())
 
         # Learning weights optimizer
@@ -92,6 +95,8 @@ class Agent(object):
         self.action_data = np.zeros((self.user_num, self.action_num, step_num * episode_num), dtype=np.float32)
         self.q_value_data = np.zeros((self.user_num, self.action_num, step_num * episode_num), dtype=np.float32)
 
+        self.qoe_data = np.zeros((self.user_num, step_num * episode_num), dtype=np.float32)
+        self.qos_data = np.zeros((self.user_num, step_num * episode_num), dtype=np.float32)
         self.reward_data = np.zeros((self.user_num, step_num * episode_num), dtype=np.float32)
         self.temperature_data = np.zeros(step_num * episode_num, dtype=np.float32)
         self.loss_data = np.zeros(step_num * episode_num, dtype=np.float32)
@@ -117,7 +122,7 @@ class Agent(object):
 
         for user_idx, state in enumerate(states):
 
-            x = torch.tensor(state, dtype=torch.float32)
+            x = torch.tensor(state[self.state_mask], dtype=torch.float32)
 
             # Estimate the q values of the input state
 
@@ -141,7 +146,10 @@ class Agent(object):
                q_values: [np.ndarray],
                rewards: [float],
                new_states: [np.ndarray],
-               temp: float):
+               qos: [float],
+               qoe: [float],
+               temp: float,
+               train: bool):
 
         """
         Update the learning data of the agent
@@ -157,6 +165,8 @@ class Agent(object):
             user_q_values = q_values[user_idx]
             user_reward = rewards[user_idx]
             user_new_state = new_states[user_idx]
+            user_qos = qos[user_idx]
+            user_qoe = qoe[user_idx]
 
             # Update the learning data
 
@@ -166,31 +176,36 @@ class Agent(object):
             self.action_data[user_idx, :, self.data_idx] = action_vector
             self.reward_data[user_idx, self.data_idx] = user_reward
             self.state_data[user_idx, :, self.data_idx] = user_new_state
+            self.qos_data[user_idx, self.data_idx] = user_qos
+            self.qoe_data[user_idx, self.data_idx] = user_qoe
 
         # Update the transition variables
 
-        self.states = [copy.copy(new_state) for new_state in new_states]
+        self.states = [copy.copy(new_state) for new_state in self.new_states]
         self.actions = [action for action in actions]
         self.rewards = [reward for reward in rewards]
-        self.new_states = [new_state for new_state in new_states]
+        self.new_states = [new_state[self.state_mask] for new_state in new_states]
 
-        # If the state variable is not None, store the new transition in the replay memory
+        if train:
 
-        if self.states[0] is not None:
-            for user_idx in range(self.user_num):
-                self.dql.store_transition(np.copy(self.states[user_idx]),
-                                          self.actions[user_idx],
-                                          self.rewards[user_idx],
-                                          np.copy(self.new_states[user_idx]))
+            # If the state variable is not None, store the new transition in the replay memory
 
-        # If the replay memory is full, perform a learning step
+            if self.states[0] is not None:
+                for user_idx in range(self.user_num):
 
-        if self.dql.ready():
-            loss = self.dql.step()
+                    self.dql.store_transition(np.copy(self.states[user_idx]),
+                                              self.actions[user_idx],
+                                              self.rewards[user_idx],
+                                              np.copy(self.new_states[user_idx]))
 
-            # Update the algorithm loss
+            # If the replay memory is full, perform a learning step
 
-            self.loss_data[self.data_idx] = loss
+            if self.dql.ready():
+                loss = self.dql.step()
+
+                # Update the algorithm loss
+
+                self.loss_data[self.data_idx] = loss
 
     def save_data(self, data_folder: str):
 
@@ -204,6 +219,8 @@ class Agent(object):
         np.save(data_folder + 'q_values.npy', self.q_value_data)
         np.save(data_folder + 'temperatures.npy', self.temperature_data)
         np.save(data_folder + 'losses.npy', self.loss_data)
+        np.save(data_folder + 'qos.npy', self.qos_data)
+        np.save(data_folder + 'qoe.npy', self.qoe_data)
         np.save(data_folder + 'data_idx.npy', self.data_idx)
 
     def save_model(self, data_folder: str):
@@ -216,45 +233,46 @@ class Agent(object):
         Load the learning data
         """
 
+        self.data_idx = np.load(data_folder + 'data_idx.npy')
+
         self.state_data = np.load(data_folder + 'states.npy')
         self.reward_data = np.load(data_folder + 'rewards.npy')
         self.action_data = np.load(data_folder + 'actions.npy')
         self.q_value_data = np.load(data_folder + 'q_values.npy')
         self.temperature_data = np.load(data_folder + 'temperatures.npy')
         self.loss_data = np.load(data_folder + 'losses.npy')
-        self.data_idx = np.load(data_folder + 'data_idx.npy')
+
+        try:
+            self.qos_data = np.load(data_folder + 'qos.npy')
+            self.qoe_data = np.load(data_folder + 'qoe.npy')
+
+        except:
+            pass
 
     def load_model(self, data_folder: str):
 
         self.dql.load_model(data_folder)
 
-    def plot_data(self, data_folder: str, episode_num: int, plot_points=50):
+    def plot_data(self, data_folder: str, episode_num: int):
 
         """
         Plot the learning data
         """
 
-        if episode_num >= plot_points:
-            xlabel = 'Episode'
-            x_num = episode_num
-        else:
-            xlabel = 'Step'
-            x_num = self.step_num * self.episode_num
-
         for user_idx in range(self.user_num):
-            user_folder = data_folder + 'user_' + str(user_idx) + '/'
+            user_folder = data_folder + str(user_idx) + '/'
 
             # States
 
-            multi_data = [self.state_data[user_idx, i, :self.data_idx] for i in range(self.state_dim)]
-            multi_keys = self.state_labels
+            multi_data = [self.state_data[user_idx, i, :self.data_idx] for i in range(self.state_dim) if self.state_mask[i]]
+
+            multi_keys = np.array(self.state_labels)[self.state_mask]
 
             multi_linear_plot(multi_data,
                               multi_keys,
-                              x_num,
+                              'Episode',
                               'State',
-                              xlabel,
-                              plot_points,
+                              episode_num,
                               user_folder + 'states')
 
             # Q values
@@ -264,10 +282,9 @@ class Agent(object):
 
             multi_linear_plot(multi_data,
                               multi_keys,
-                              x_num,
+                              'Episode',
                               'Q value',
-                              xlabel,
-                              plot_points,
+                              episode_num,
                               user_folder + 'q_values')
 
             # Actions
@@ -277,10 +294,9 @@ class Agent(object):
 
             multi_linear_plot(multi_data,
                               multi_keys,
-                              x_num,
+                              'Episode',
                               'Action probability',
-                              xlabel,
-                              plot_points,
+                              episode_num,
                               user_folder + 'actions')
 
             # Single feature
@@ -290,34 +306,43 @@ class Agent(object):
                 min_value, max_value = self.state_normalization[i]
 
                 linear_plot(self.state_data[user_idx, i, :self.data_idx] * (max_value - min_value) + min_value,
-                            x_num,
+                            'Episode',
                             self.state_labels[i],
-                            xlabel,
-                            plot_points,
+                            episode_num,
                             user_folder + str(self.state_labels[i]))
 
             # Rewards
 
             linear_plot(self.reward_data[user_idx, :self.data_idx],
-                        x_num,
+                        'Episode',
                         'Reward',
-                        xlabel,
-                        plot_points,
+                        episode_num,
                         user_folder + 'rewards')
+
+            linear_plot(self.qoe_data[user_idx, :self.data_idx],
+                        'Episode',
+                        'Chamfer Distance',
+                        episode_num,
+                        user_folder + 'qoe')
+
+            linear_plot(self.qos_data[user_idx, :self.data_idx],
+                        'Episode',
+                        'QoS',
+                        episode_num,
+                        user_folder + 'qos')
 
         # States
 
         state_data = np.mean(self.state_data, axis=0)
 
-        multi_data = [state_data[i, :self.data_idx] for i in range(self.state_dim)]
-        multi_keys = self.state_labels
+        multi_data = [state_data[i, :self.data_idx] for i in range(self.state_dim) if self.state_mask[i]]
+        multi_keys = np.array(self.state_labels)[self.state_mask]
 
         multi_linear_plot(multi_data,
                           multi_keys,
-                          x_num,
+                          'Episode',
                           'State',
-                          xlabel,
-                          plot_points,
+                          episode_num,
                           data_folder + 'states')
 
         # Q values
@@ -329,10 +354,9 @@ class Agent(object):
 
         multi_linear_plot(multi_data,
                           multi_keys,
-                          x_num,
+                          'Episode',
                           'Q value',
-                          xlabel,
-                          plot_points,
+                          episode_num,
                           data_folder + 'q_values')
 
         # Actions
@@ -344,10 +368,9 @@ class Agent(object):
 
         multi_linear_plot(multi_data,
                           multi_keys,
-                          x_num,
+                          'Episode',
                           'Action probability',
-                          xlabel,
-                          plot_points,
+                          episode_num,
                           data_folder + 'actions')
 
         # Single feature
@@ -358,10 +381,9 @@ class Agent(object):
             state_data = np.mean(self.state_data, axis=0)
 
             linear_plot(state_data[i, :self.data_idx] * (max_value - min_value) + min_value,
-                        x_num,
+                        'Episode',
                         self.state_labels[i],
-                        xlabel,
-                        plot_points,
+                        episode_num,
                         data_folder + str(self.state_labels[i]))
 
         # Rewards
@@ -369,26 +391,43 @@ class Agent(object):
         reward_data = np.mean(self.reward_data, axis=0)
 
         linear_plot(reward_data[:self.data_idx],
-                    x_num,
+                    'Episode',
                     'Reward',
-                    xlabel,
-                    plot_points,
+                    episode_num,
                     data_folder + 'rewards')
+
+        # QoS
+
+        qos_data = np.mean(self.qos_data, axis=0)
+
+        linear_plot(qos_data[:self.data_idx],
+                    'Episode',
+                    'QoS',
+                    episode_num,
+                    data_folder + 'qos')
+
+        # QoE
+
+        qoe_data = np.mean(self.qoe_data, axis=0)
+
+        linear_plot(qoe_data[:self.data_idx],
+                    'Episode',
+                    'Chamfer Distance',
+                    episode_num,
+                    data_folder + 'qoe')
 
         # Loss
 
         linear_plot(self.loss_data[:self.data_idx],
-                    x_num,
+                    'Episode',
                     'Loss',
-                    xlabel,
-                    plot_points,
+                    episode_num,
                     data_folder + 'losses')
 
         # Temperature
 
         linear_plot(self.temperature_data[:self.data_idx],
-                    x_num,
+                    'Episode',
                     'Temperature',
-                    xlabel,
-                    plot_points,
+                    episode_num,
                     data_folder + 'temperatures')

@@ -46,9 +46,12 @@
       "request": "launch",
       "program": "${workspaceFolder}/build/scratch/ran-ai/ran-ai",
       "preLaunchTask": "Build",
-      "args": ["--appTracesPath=/home/dragomat/Documents/work/ns3-mmwave-pqos/input/kitti-dataset.csv", 
+      "args": [
+        "--appTracesPath=/home/dragomat/Documents/work/ns3-mmwave-pqos/input/kitti-dataset.csv",
         "--gemvTracesPath=/home/dragomat/Documents/work/ns3-mmwave-pqos/input/bolognaLeftHalfRSU3_50vehicles_100sec/13-May-2021_",
-      "--numUes=50", "--installRanAI=false"],
+        "--numUes=1",
+        "--installRanAI=false"
+      ],
       "stopAtEntry": false,
       "cwd": "${workspaceFolder}",
       "environment": [

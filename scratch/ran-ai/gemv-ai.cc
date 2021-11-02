@@ -75,9 +75,10 @@ main (int argc, char *argv[])
   uint32_t kittiModel = 1452;
   uint32_t updatePeriodicity = 100;
   uint32_t simDuration = 10;
-  double txPower = 30.0;
+  double txPower = 23.0;
   bool installRanAI = true;
   bool writeToFile = false;
+  bool idealActionUpdate = true;
 
   CommandLine cmd;
   cmd.AddValue ("numUes", "Number of UE nodes", numUes);
@@ -96,6 +97,7 @@ main (int argc, char *argv[])
   cmd.AddValue ("simDuration", "The duration of the simulation, in seconds", simDuration);
   cmd.AddValue ("installRanAI", "Decide whether or not to install the RAN-AI entity", installRanAI);
   cmd.AddValue ("writeToFile", "Decide whether or not to write PHY, RLC, PDCP and APP stats to file", writeToFile);
+  cmd.AddValue ("idealActionUpdate", "Decide whether or not to send a real packet to communicate the action from the RAN-AI", idealActionUpdate);
   cmd.Parse (argc, argv);
   
   Config::SetDefault ("ns3::MmWaveBearerStatsCalculator::AggregatedStats", BooleanValue (true));
@@ -110,6 +112,7 @@ main (int argc, char *argv[])
   Config::SetDefault ("ns3::LteRlcAm::PollRetransmitTimer", TimeValue (MilliSeconds (100)));
   Config::SetDefault ("ns3::MmWaveUePhy::TxPower", DoubleValue (txPower));
   Config::SetDefault ("ns3::MmWaveEnbNetDevice::StatusUpdate", TimeValue (MilliSeconds(updatePeriodicity)));
+  Config::SetDefault ("ns3::MmWaveEnbNetDevice::IdealActionUpdate", BooleanValue (idealActionUpdate));
   Config::SetDefault ("ns3::MmWaveBearerStatsCalculator::WriteToFile", BooleanValue (writeToFile));
   Config::SetDefault ("ns3::BurstyAppStatsCalculator::WriteToFile", BooleanValue (writeToFile));
   if (installRanAI)
@@ -141,6 +144,7 @@ main (int argc, char *argv[])
   std::vector<uint16_t> ueList = gemv->GetDistinctIds (false);
 
   NS_ABORT_MSG_IF (ueList.size () < numUes, "Too many UEs");
+  NS_ABORT_MSG_IF (firstVehicleIndex <= 0, "Vehicle indexes goes from 1 to 50");
 
   NodeContainer rsuNodes;
   NodeContainer ueNodes;
@@ -178,7 +182,7 @@ main (int argc, char *argv[])
     }
     else
     {
-      auto id = urv->GetInteger(0, ueList.size());
+      auto id = urv->GetInteger(0, ueList.size()-1);
       tagID = ueList.at (id);
       auto it = std::find (ueList.begin (), ueList.end (), tagID);
       ueList.erase (it);

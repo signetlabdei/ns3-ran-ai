@@ -2,6 +2,7 @@
 *.orig
 *.patch
 *.rej
+*.out
 
 scratch/ran-ai/output
 

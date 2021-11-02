@@ -115,6 +115,16 @@ public:
   void SendStatusUpdate ();
 
   /** 
+   * Notify the action to the user ideally, i.e., without sending a real packet
+  */
+  void NotifyActionIdeal (uint16_t imsi, uint16_t action);
+
+  /** 
+   * Notify the action to the user by sending a real packet (that could be missed or received corrupted)
+  */
+  void NotifyActionReal (uint16_t imsi, uint16_t action);
+
+  /** 
    * Callback to PHY layer trace  
   */
   void RxPacketTraceEnbCallback (std::string path, RxPacketTraceParams params);
@@ -142,6 +152,7 @@ private:
   std::map<uint64_t, std::vector<double>> m_symbolsHistory; ///< vector of symbols used in the specific time window associated to IMSI
   std::map<uint64_t, std::vector<double>> m_sinrHistory; ///< vector of SINR samples collected in the specific time window associated to IMSI
   std::map<uint64_t, std::vector<double>> m_mcsHistory; ///< vector of MCS samples collected in the specific time window associated to IMSI
+  std::map<uint16_t, uint16_t> m_lastAction; ///< map storing the last action associated to each user <imsi, actions>
 
   std::map<uint16_t, Ptr<Application>> m_imsiApp; ///< map associating the user IMSI to a pointer to the installed application
 
@@ -150,6 +161,7 @@ private:
   Ptr<BurstyAppStatsCalculator> m_appStats; ///< pointer to an instance of the BurstyApp stats calculator
 
   Time m_statusUpdate; ///< periodicity of the RAN-AI status update
+  bool m_idealActionUpdate; ///< whether to immediately (ideally) notify the action or send a packet carrying the selected action through the channel 
 };
 }
 }
