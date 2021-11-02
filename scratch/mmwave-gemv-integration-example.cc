@@ -72,6 +72,7 @@ main (int argc, char *argv[])
   std::string appType = "kitti";
   uint32_t kittiModel = 1450;
   double txPower = 30.0;
+  double tracesPeriodicity = 100;
 
   CommandLine cmd;
   cmd.AddValue ("numUes", "Number of UE nodes", numUes);
@@ -86,11 +87,12 @@ main (int argc, char *argv[])
   cmd.AddValue ("applicationType", "Uplink application to install in the clients [classic, kitti].", appType);
   cmd.AddValue ("kittiModel", "Compression type [1450, 1451, 1452, 1150]", kittiModel);
   cmd.AddValue ("txPower", "The vehicle tx power in dBm", txPower);
+  cmd.AddValue ("tracesPeriodicity", "Periodicity used to generate the traces in milliseconds", tracesPeriodicity);
   cmd.Parse (argc, argv);
   
   Config::SetDefault ("ns3::MmWaveBearerStatsCalculator::AggregatedStats", BooleanValue (true));
-  Config::SetDefault ("ns3::MmWaveBearerStatsCalculator::EpochDuration", TimeValue (Seconds (0.1)));
-  Config::SetDefault ("ns3::BurstyAppStatsCalculator::EpochDuration", TimeValue (Seconds (0.1)));
+  Config::SetDefault ("ns3::MmWaveBearerStatsCalculator::EpochDuration", TimeValue (MilliSeconds (tracesPeriodicity)));
+  Config::SetDefault ("ns3::BurstyAppStatsCalculator::EpochDuration", TimeValue (MilliSeconds (tracesPeriodicity)));
   Config::SetDefault ("ns3::KittiTraceBurstGenerator::Model", UintegerValue (kittiModel));
   Config::SetDefault ("ns3::MmWavePhyMacCommon::Bandwidth", DoubleValue (bandwidth));
   Config::SetDefault ("ns3::MmWaveHelper::RlcAmEnabled", BooleanValue (true));

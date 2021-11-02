@@ -73,7 +73,7 @@ Return:
     - y: list of y coordinates visited by the vehicle
     - z: list of values measured at each location 
 """ 
-def map_position_to_metric (vehicleIndex, rlcOrPdcpStat, metric):
+def map_position_to_metric_single_vehicle (vehicleIndex, rlcOrPdcpStat, metric):
     mobilityPath = "input/bolognaLeftHalfRSU3_50vehicles_100sec/mobility/nodes/"
     mobilityDf = pd.read_csv (mobilityPath + "node-" + str (vehicleIndex) + ".txt", 
                               header=None, delimiter=" ", names=['time [s]', 'x', 'y']) 
@@ -97,6 +97,27 @@ def map_position_to_metric (vehicleIndex, rlcOrPdcpStat, metric):
     return x,y,z
 
 """
+Associates a metric measured by multiple vehicles over multiple time instants 
+with the visited positions.   
+
+Params: 
+    - rlcOrPdcpStat: dataframe containing the simulation results (works only 
+                     with RLC, PDCP or APP results)
+    - metric: the metric to consider
+Return:
+    - x: list of x coordinates visited by the vehicle
+    - y: list of y coordinates visited by the vehicle
+    - z: list of average values measured at each location 
+""" 
+def map_position_to_metric (rlcOrPdcpResult, metric):
+    allXYZ = pd.DataFrame ()
+    for i in rlcOrPdcpResult ['firstVehicleIndex'].unique ():
+        (x, y, z) = map_position_to_metric_single_vehicle (i, rlcOrPdcpResult, metric)
+        data = {'x' : x, 'y' : y, metric : z}
+        allXYZ = allXYZ.append (pd.DataFrame (data), ignore_index=True)
+    return allXYZ   
+         
+"""
 Produces a map plot in which each point represents a visited location. 
 The color of each point indicates the value of a certain metric measured in 
 that location. 
@@ -114,12 +135,10 @@ Params:
 def plot_metric_map (rlcOrPdcpResult, metric, figName, gamma=0.5):
     fig, ax = plt.subplots (1, 1)
     ax.grid ()
-    allXYZ = pd.DataFrame ()
-    for i in rlcOrPdcpResult ['firstVehicleIndex'].unique ():
-        (x, y, z) = map_position_to_metric (i, rlcOrPdcpResult, metric)
-        data = {'x' : x, 'y' : y, metric : z}
-        allXYZ = allXYZ.append (pd.DataFrame (data), ignore_index=True)
-
+    allXYZ = map_position_to_metric (rlcOrPdcpStat, metric)
+    
+    # if multiple measures are available for the same position, compute the
+    # average
     allXYZ = allXYZ.groupby (['x', 'y'], as_index=False).mean ()
     vMax = max (allXYZ [metric])
     if (metric == 'avg prr'):
