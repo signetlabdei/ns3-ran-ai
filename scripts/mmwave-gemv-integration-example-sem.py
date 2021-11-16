@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 # # Temporarily limit number of max cores used
 # sem.parallelrunner.MAX_PARALLEL_PROCESSES = 1
 
-campaignName  = 'test-periodicity'
+campaignName  = 'offline-train-dataset'
 (ns_path, ns_script, ns_res_path, 
  params_grid, _) = get_campaign_params (campaignName)
 

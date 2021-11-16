@@ -79,6 +79,7 @@ main (int argc, char *argv[])
   bool installRanAI = true;
   bool writeToFile = false;
   bool idealActionUpdate = true;
+  bool useFakeRanAi = false;
 
   CommandLine cmd;
   cmd.AddValue ("numUes", "Number of UE nodes", numUes);
@@ -98,6 +99,7 @@ main (int argc, char *argv[])
   cmd.AddValue ("installRanAI", "Decide whether or not to install the RAN-AI entity", installRanAI);
   cmd.AddValue ("writeToFile", "Decide whether or not to write PHY, RLC, PDCP and APP stats to file", writeToFile);
   cmd.AddValue ("idealActionUpdate", "Decide whether or not to send a real packet to communicate the action from the RAN-AI", idealActionUpdate);
+  cmd.AddValue ("useFakeRanAi", "Use a fake RAN AI", useFakeRanAi);
   cmd.Parse (argc, argv);
   
   Config::SetDefault ("ns3::MmWaveBearerStatsCalculator::AggregatedStats", BooleanValue (true));
@@ -369,7 +371,19 @@ main (int argc, char *argv[])
     }
   if (installRanAI)
     {
-      mmWaveHelper->InstallRanAI (rsuDevs, imsiApplication, statsCalculator);
+      if (!useFakeRanAi)
+      {
+        mmWaveHelper->InstallRanAI (rsuDevs, imsiApplication, statsCalculator);        
+      }
+      else
+      {
+        // Install a fake RAN AI
+        // In this case, the RAN AI is not created, but the reporting cycle is 
+        // enabled anyway. The statistics that the gNB sends to the RAN AI are 
+        // collected in a file called "RanAiStats.txt".
+        // This option is used to create a dataset to train the RL agent offline
+        mmWaveHelper->InstallFakeRanAI (rsuDevs, imsiApplication, statsCalculator);        
+      }
     }
 
   Time simTime = maxSimTime - Seconds (1.0);

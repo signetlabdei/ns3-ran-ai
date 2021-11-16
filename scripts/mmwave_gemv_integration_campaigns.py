@@ -84,6 +84,23 @@ def get_campaign_params (campaignName):
             "appTracesPath" : '/media/vol2/zugnotom/rsync/ns3-mmwave-pqos/input/kitti-dataset.csv',
             "tracesPeriodicity" : 500
         }
+        figure_path = ns_res_path + '/figures/' 
+    elif (campaignName == 'offline-train-dataset'):
+        ns_script = 'ran-ai'
+        numTrajectories = 50
+        params_grid = {
+            "RngRun": 1,
+            "firstVehicleIndex": list(range(numTrajectories)),
+            "numUes": 2,
+        	"applicationType" : 'kitti',
+            "kittiModel": [1452],
+        	"dlIpiMicroS": 500e3,
+        	"useFakeRanAi": True,
+            "simDuration": 90,
+            "txPower" : 23,
+            "gemvTracesPath" : '/media/vol2/zugnotom/rsync/ns3-mmwave-pqos/input/bolognaLeftHalfRSU3_50vehicles_100sec/13-May-2021_',
+            "appTracesPath" : '/media/vol2/zugnotom/rsync/ns3-mmwave-pqos/input/kitti-dataset.csv'
+        }
         figure_path = ns_res_path + '/figures/'      
     else:
         print ('Unknown campaign name')

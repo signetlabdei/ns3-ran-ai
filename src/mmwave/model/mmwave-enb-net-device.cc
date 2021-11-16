@@ -154,6 +154,8 @@ MmWaveEnbNetDevice::DoDispose ()
       m_ccMap.at (i) = 0;
     }
 
+  m_ranAiStats.close ();
+
   MmWaveNetDevice::DoDispose ();
 }
 
@@ -290,10 +292,11 @@ MmWaveEnbNetDevice::SetCcMap (std::map< uint8_t, Ptr<MmWaveComponentCarrier> > c
 }
 
 void
-MmWaveEnbNetDevice::InstallRanAI (int memBlockKey, Ptr<MmWaveBearerStatsCalculator> rlcStats, 
-Ptr<MmWaveBearerStatsCalculator> pdcpStats, 
-std::map<uint16_t, Ptr<Application>> imsiApplication,
-Ptr<BurstyAppStatsCalculator> appStats)
+MmWaveEnbNetDevice::InstallRanAI (int memBlockKey, 
+                                  Ptr<MmWaveBearerStatsCalculator> rlcStats, 
+                                  Ptr<MmWaveBearerStatsCalculator> pdcpStats, 
+                                  std::map<uint16_t, Ptr<Application>> imsiApplication,
+                                  Ptr<BurstyAppStatsCalculator> appStats)
 {
   NS_LOG_DEBUG("Install RAN-AI entity on the eNB");
 
@@ -306,6 +309,56 @@ Ptr<BurstyAppStatsCalculator> appStats)
 
   // Use the bearer status calculator already available, for the collection of metrics at RLC and PDCP
   Simulator::Schedule (m_statusUpdate, &MmWaveEnbNetDevice::SendStatusUpdate, this);
+}
+
+void
+MmWaveEnbNetDevice::InstallFakeRanAI (Ptr<MmWaveBearerStatsCalculator> rlcStats, 
+                                      Ptr<MmWaveBearerStatsCalculator> pdcpStats, 
+                                      std::map<uint16_t, Ptr<Application>> imsiApplication, 
+                                      Ptr<BurstyAppStatsCalculator> appStats)
+{
+  NS_LOG_DEBUG("Install FAKE RAN-AI entity on the eNB");
+
+  m_imsiApp = imsiApplication;
+  m_rlcStats = rlcStats;
+  m_pdcpStats = pdcpStats;
+  m_imsiApp = imsiApplication;
+  m_appStats = appStats;
+
+  // Use the bearer status calculator already available, for the collection of metrics at RLC and PDCP
+  Simulator::Schedule (m_statusUpdate, &MmWaveEnbNetDevice::SendStatusUpdate, this);
+
+  // Create a file to log the stats collected by the fake RAN AI
+  m_ranAiStats.open ("RanAiStats.txt", std::ios::out);
+  m_ranAiStats << "Time [s]\t" <<
+                  "IMSI\t" <<
+                  "MCS\t"<<
+                  "avg syms\t" <<
+                  "avg SINR" <<
+                  "RLC txPackets\t" <<
+                  "RLC txData\t" <<
+                  "RLC rxPackets\t" <<
+                  "RLC rxData\t" <<
+                  "RLC delayMean\t" <<
+                  "RLC delayStdev\t" <<
+                  "RLC delayMin\t" <<
+                  "RLC delayMax\t" <<
+                  "PDCP txPackets\t" <<
+                  "PDCP txData\t" <<
+                  "PDCP rxPackets\t" <<
+                  "PDCP rxData\t" <<
+                  "PDCP delayMean\t" <<
+                  "PDCP delayStdev\t" <<
+                  "PDCP delayMin\t" <<
+                  "PDCP delayMax\t" <<
+                  "APP txBursts\t" <<
+                  "APP txData\t" <<
+                  "APP rxBursts\t" <<
+                  "APP rxData\t" <<
+                  "APP delayMean\t" <<
+                  "APP delayStdev\t" <<
+                  "APP delayMin\t" <<
+                  "APP delayMax\n";
 }
 
 void
@@ -455,46 +508,56 @@ MmWaveEnbNetDevice::SendStatusUpdate ()
       }
     }
   
-  // Report measure window and get the associated actions
-  std::map<uint16_t, uint16_t> actions = m_ranAI->ReportMeasures (imsiStatsMap);
-
-  // propagate actions to all UEs
-  for (const auto& i: actions)
-  {
-    auto it = m_lastAction.find(i.first);
-    bool update = true;
-
-    if (it != m_lastAction.end())
+  if (m_ranAI)
+  {// This is executed if a real RAN AI entity is instantiated
+    
+    // Report measure window and get the associated actions
+    std::map<uint16_t, uint16_t> actions = m_ranAI->ReportMeasures (imsiStatsMap);  
+  
+    // propagate actions to all UEs
+    for (const auto& i: actions)
     {
-      // there was something stored about *rnti*, check if new action is same of the old one or not
-      if (it->second == i.second)
+      auto it = m_lastAction.find(i.first);
+      bool update = true;
+
+      if (it != m_lastAction.end())
       {
-        // old one and new one are the same, do not send message to the user
-        update = false;
+        // there was something stored about *rnti*, check if new action is same of the old one or not
+        if (it->second == i.second)
+        {
+          // old one and new one are the same, do not send message to the user
+          update = false;
+        }
+        else
+        {
+          // update the entry and send the update to the user
+          it->second = i.second;
+        }
       }
       else
       {
-        // update the entry and send the update to the user
-        it->second = i.second;
+        // nothing stored about this user, communicate the action
+        m_lastAction [i.first] = i.second;
       }
-    }
-    else
-    {
-      // nothing stored about this user, communicate the action
-      m_lastAction [i.first] = i.second;
-    }
 
-    if (update)
-    {
-      if (m_idealActionUpdate)
+      if (update)
       {
-        NotifyActionIdeal (i.first, i.second);
-      }
-      else
-      {
-        NotifyActionReal (i.first, i.second);
+        if (m_idealActionUpdate)
+        {
+          NotifyActionIdeal (i.first, i.second);
+        }
+        else
+        {
+          NotifyActionReal (i.first, i.second);
+        }
       }
     }
+  }
+  else
+  { // This is executed when NO RAN AI entity is instantiated
+    // This method is used to collect metrics without a real interaction with 
+    // the RAN AI. In this case, no action is taken.
+    PrintRanAiStatsToFile (imsiStatsMap);
   }
 
   // Schedule next status update
@@ -544,6 +607,21 @@ MmWaveEnbNetDevice::NotifyActionReal (uint16_t imsi, uint16_t action)
   NS_LOG_DEBUG (Simulator::Now () << " " << pkt->GetUid () << " " << pkt->GetSize () << " RNTI "
                                   << rnti << " action " << action);
   DoSend (pkt, Address (), Ipv4L3Protocol::PROT_NUMBER);
+}
+
+void
+MmWaveEnbNetDevice::PrintRanAiStatsToFile (std::map<double, std::vector<double>> imsiStatsMap)
+{
+  for (const auto& kv : imsiStatsMap)
+  {
+    m_ranAiStats << Simulator::Now ().GetSeconds () << "\t" << 
+                    +kv.first;
+    for (const auto& i : kv.second)
+    {
+      m_ranAiStats  << "\t" << +i;    
+    }
+    m_ranAiStats << "\n";
+  }
 }
 
 }

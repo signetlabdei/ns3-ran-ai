@@ -97,7 +97,9 @@ public:
 
   void SetCcMap (std::map< uint8_t, Ptr<MmWaveComponentCarrier> > ccm) override;
 
-  /** Install the RAN AI entity
+  /** 
+   * Install the RAN AI entity
+   *
    * \param memBlockKey ID of the memory block used to interact with python
    * \param rlcStats pointer to MmWaveBearerStatsCalculator used to retrieve RLC statististics
    * \param pdcpStats pointer to MmWaveBearerStatsCalculator used to retrieve PDCP statististics
@@ -108,6 +110,19 @@ public:
                      Ptr<MmWaveBearerStatsCalculator> pdcpStats,
                      std::map<uint16_t, Ptr<Application>> imsiApplication,
                      Ptr<BurstyAppStatsCalculator> appStats);
+   
+  /** 
+   * Install a fake RAN AI entity.
+   *
+   * \param rlcStats pointer to MmWaveBearerStatsCalculator used to retrieve RLC statististics
+   * \param pdcpStats pointer to MmWaveBearerStatsCalculator used to retrieve PDCP statististics
+   * \param imsiApplication map containing pointers to applications installed in UEs, used to configure the APP behavior depending on RAN AI decisions
+   * \param appStats pointer to BurstyAppStatsCalculator used to retried APP statistics
+   */                   
+  void InstallFakeRanAI (Ptr<MmWaveBearerStatsCalculator> rlcStats,
+                         Ptr<MmWaveBearerStatsCalculator> pdcpStats,
+                         std::map<uint16_t, Ptr<Application>> imsiApplication, 
+                         Ptr<BurstyAppStatsCalculator> appStats);
 
   /** 
    * Send update on the cell status to the RAN-AI installed on this eNB 
@@ -135,6 +150,12 @@ protected:
 
 
 private:
+  /** 
+   * Prints the metrics collected for the RAN AI in a text file
+   * \param stats vector containing the values of the different metrics
+   */
+  void PrintRanAiStatsToFile (std::map<double, std::vector<double>> stats);
+  
   Ptr<MmWaveMacScheduler> m_scheduler;
 
   Ptr<LteEnbRrc> m_rrc;
@@ -162,6 +183,8 @@ private:
 
   Time m_statusUpdate; ///< periodicity of the RAN-AI status update
   bool m_idealActionUpdate; ///< whether to immediately (ideally) notify the action or send a packet carrying the selected action through the channel 
+
+  std::ofstream m_ranAiStats; //!< file to collect logs sent to the RAN AI, works only in fake mode
 };
 }
 }

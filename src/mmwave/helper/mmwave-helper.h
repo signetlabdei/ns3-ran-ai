@@ -334,6 +334,15 @@ public:
 
   void InstallRanAI (NetDeviceContainer devices, std::map<uint16_t, Ptr<Application>> imsiApplication, Ptr<BurstyAppStatsCalculator> appStats);
   
+  /**
+   * Install a fake RAN AI on eNB devices, used for testing purposes
+   *
+   * \param devices enb devices
+   * \param imsiApplication map <IMSI, application>
+   * \param appStats pointer to the APP stats calculator
+   */
+  void InstallFakeRanAI (NetDeviceContainer devices, std::map<uint16_t, Ptr<Application>> imsiApplication, Ptr<BurstyAppStatsCalculator> appStats);
+  
 protected:
   virtual void DoInitialize ();
 

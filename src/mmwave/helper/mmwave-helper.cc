@@ -3111,6 +3111,20 @@ MmWaveHelper::InstallRanAI (NetDeviceContainer devices, std::map<uint16_t, Ptr<A
   }
 }
 
+void
+MmWaveHelper::InstallFakeRanAI (NetDeviceContainer devices, std::map<uint16_t, Ptr<Application>> imsiApplication, Ptr<BurstyAppStatsCalculator> appStats)
+{  
+  for (auto dev = devices.Begin (); dev != devices.End (); ++dev)
+  {
+    DynamicCast<MmWaveEnbNetDevice>(*dev)->InstallFakeRanAI(GetRlcStats(), GetPdcpStats(), imsiApplication, appStats);
+
+    // Connect traces for get information on PHY metrics
+    // TODO make it device dependant, i.i., each eNB gets info only on its PHY
+    Config::ConnectFailSafe ("/NodeList/*/DeviceList/*/ComponentCarrierMap/*/MmWaveEnbPhy/DlSpectrumPhy/RxPacketTraceEnb",
+                     MakeCallback (&MmWaveEnbNetDevice::RxPacketTraceEnbCallback, DynamicCast<MmWaveEnbNetDevice>(*dev)));
+  }
+}
+
 NetDeviceContainer
 MmWaveHelper::InstallSub6UeDevice (NodeContainer c)
 {
