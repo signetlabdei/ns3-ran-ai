@@ -32,6 +32,8 @@
 #include "ns3/udp-socket-factory.h"
 #include "burst-sink.h"
 #include "ns3/boolean.h"
+#include "kitti-trace-burst-generator.h"
+#include "burst-generator.h"
 
 namespace ns3 {
 
@@ -56,6 +58,10 @@ BurstSink::GetTypeId (void)
                    TypeIdValue (UdpSocketFactory::GetTypeId ()),
                    MakeTypeIdAccessor (&BurstSink::m_tid),
                    MakeTypeIdChecker ())
+    .AddAttribute ("DecodingDelay", "Decide wheter or not to take into account decoding delay on received bursts",
+                  BooleanValue (false),
+                  MakeBooleanAccessor (&BurstSink::m_decodingDelay),
+                  MakeBooleanChecker ())
     .AddTraceSource ("FragmentRx",
                      "A fragment has been received",
                      MakeTraceSourceAccessor (&BurstSink::m_rxFragmentTrace),
@@ -322,8 +328,45 @@ BurstSink::FragmentReceived (BurstHandler &burstHandler, const Ptr<Packet> &f, c
       NS_LOG_LOGIC ("Burst received: " << header.GetFrags () << " fragments for a total of "
                                        << header.GetSize () << " B");
       m_totRxBursts++;
-      m_rxBurstTrace (burstHandler.m_burstBuffer, from, localAddress,
-                      header); // TODO header size does not include payload, why?
+
+      // schedule next burst
+      
+      if (m_decodingDelay)
+      {
+        uint32_t appMode = DynamicCast<KittiTraceBurstGenerator> (m_appBurstGenerator)->GetModel ();
+        uint32_t additionalDelay = 0; // must be added in milliseconds
+        if (appMode == 1150)
+          {
+            additionalDelay = 10.478182; // decoding time
+          }
+        else if (appMode == 1450)
+          {
+            additionalDelay = 13.570909; // decoding time
+          }
+        else if (appMode == 1451)
+          {
+            additionalDelay = 5.814545; // decoding time
+          }
+        else if (appMode == 1452)
+          {
+            additionalDelay = 0.727273; // decoding time
+          }
+        else
+          {
+            NS_LOG_WARN ("Invalid application mode.");
+          }
+
+        Time delay = MilliSeconds (additionalDelay);
+
+        NS_LOG_DEBUG ("Decoding delay " << delay.As (Time::S));
+
+        Simulator::Schedule (delay, &BurstSink::HandleCorrectReception, this,
+                            burstHandler.m_burstBuffer, from, localAddress, header);
+      }
+      else
+      {
+        m_rxBurstTrace (burstHandler.m_burstBuffer, from, localAddress, header);
+      }
     }
 }
 
@@ -345,6 +388,19 @@ BurstSink::HandleAccept (Ptr<Socket> s, const Address &from)
   NS_LOG_FUNCTION (this << s << from);
   s->SetRecvCallback (MakeCallback (&BurstSink::HandleRead, this));
   m_socketList.push_back (s);
+}
+
+void
+BurstSink::ConnectBurstGenerator (Ptr<KittiTraceBurstGenerator> ktb)
+{
+  m_appBurstGenerator = ktb;
+}
+
+void
+BurstSink::HandleCorrectReception (Ptr<Packet> burstBuffer, const Address &from,
+                                   const Address &localAddress, SeqTsSizeFragHeader header)
+{
+  m_rxBurstTrace (burstBuffer, from, localAddress, header); // TODO header size does not include payload, why?
 }
 
 } // Namespace ns3

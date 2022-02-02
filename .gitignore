@@ -5,6 +5,7 @@
 *.out
 
 scratch/ran-ai/output
+scratch/ran-ai/offline_dataset
 
 .idea
 *.txt

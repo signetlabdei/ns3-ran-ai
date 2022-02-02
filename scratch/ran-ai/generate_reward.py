@@ -1,7 +1,7 @@
-from settings import *
+from settings.GeneralSettings import *
 import numpy as np
 import os
-from Agent.RewardProcessing import get_reward_per_action
+from agent.RewardProcessing import get_reward_per_action
 import argparse
 from distutils.dir_util import copy_tree
 

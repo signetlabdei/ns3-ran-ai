@@ -1,19 +1,26 @@
-from Agent.Agent import CentralizedAgent
-from Agent.Linearplot import multi_linear_plot
-from Agent.Boxplot import multi_boxplot
-from Agent.Violinplot import multi_violinplot
-from Agent.Histplot import multi_histplot
-from Agent.Densityplot import multi_density_plot
-from settings import *
+from agent.Agent import CentralizedAgent
+from plot.Boxplot import multi_boxplot
+from plot.Violinplot import multi_violinplot
+from plot.Histplot import multi_histplot
+from settings.StateSettings import state_mask, state_dim, state_full_labels, state_labels, state_normalization
+from settings.GeneralSettings import *
+import numpy as np
+import seaborn as sns
 import os
 import argparse
 
 parser = argparse.ArgumentParser()
+parser.add_argument('-multi_alpha', '--multi_alpha', action='store_const', const=True, default=False)
+parser.add_argument('-multi_user', '--multi_user', action='store_const', const=True, default=False)
 parser.add_argument('-user', '--user_num', type=int, default=1)
-parser.add_argument('-penalty', '--reward_penalty', type=float, default=0)
-parser.add_argument('-episode', '--episode_num', type=int, default=500)
-parser.add_argument('-step', '--step_num', type=int, default=500)
+parser.add_argument('-policy', '--policy', type=str, default='dql')
+parser.add_argument('-penalty', '--reward_penalty', type=float, default=10)
+parser.add_argument('-episode', '--episode_num', type=int, default=100)
+parser.add_argument('-step', '--step_num', type=int, default=800)
+parser.add_argument('-power', '--power', type=int, default=23)
+parser.add_argument('-alpha', '--alpha', type=float, default=1.0)
 parser.add_argument('-update', '--update', type=str, default='real')
+parser.add_argument('-format', '--format', type=str, default='png')
 args = vars(parser.parse_args())
 
 plot_points: int = 100
@@ -21,47 +28,159 @@ step_num: int = args['step_num']
 episode_num: int = args['episode_num']
 reward_penalty: float = args['reward_penalty']
 state_dim: int = state_dim
-user_num: int = args['user_num']
-state_labels: [str] = state_labels
-action_labels: [str] = [1150, 2, 1450, 1452]
+plot_format: str = args['format']
+action_labels: [str] = [1450, 1451, 1452]
 action_num: int = len(action_labels)
 state_normalization: [[]] = state_normalization
-update_folder = args['update'] + '_update/'
+
+palette = sns.color_palette('rocket')
+
+state_palette = sns.color_palette('rocket', 2)
+reward_palette = sns.color_palette('rocket', 2)
+qoe_palette = sns.color_palette('rocket', 3)
+cd_palette = sns.color_palette('rocket_r', 3)
+qos_palette = sns.color_palette('rocket', 2)
 
 plot_state = True
-plot_reward = False
-plot_qoe = False
-plot_qos = False
+plot_perf = True
 
-policies: [str] = ['random', '1150', '1450', '2', '1452', 'dql']
-policy_labels: [str] = ['Random', '1150', '1450', '2', '1452', 'DQL']
+test_folders: [str] = []
+user_per_test: [int] = []
+label_per_test: [str] = []
+legend_per_test: [str] = []
 
-data_folders: [str] = []
+label_key = None
+legend_key = None
 
-scenario_name = update_folder + str(user_num) + '_user/' + \
-                'penalty=' + str(reward_penalty) + '/' \
-                + str(episode_num) + '_episode/' \
-                + str(step_num) + '_step/'
+if args['multi_user'] and args['multi_alpha']:
 
-output_folder = 'output/multi_test/' + scenario_name  # Output folder
+    label_key = '$N_{u}$'
+    legend_key = '$\\alpha$'
 
-if not os.path.exists(output_folder):
-    os.makedirs(output_folder)
+    policy = args['policy']
 
-for policy in policies:
-    policy_folder = 'output/test/' + policy + '/' + scenario_name
-    data_folders.append(policy_folder)
+    users: [int] = [1, 5]
+    labels: [str] = ['1', '5']
+    alphas: [float] = [0.5, 1.0]
+    legends: [str] = ['0.5', '1.0']
 
-policy_num = len(data_folders)
+    scenario_name = args['update'] + '_update/'
+
+    for label, user_num in zip(labels, users):
+
+        for legend, alpha in zip(legends, alphas):
+            policy_folder = 'output/test/' + scenario_name + 'user=' + str(user_num) + '/power='\
+                            + str(args['power']) + '/penalty=' + str(reward_penalty) + '/alpha='\
+                            + str(alpha) + '/episode=' + str(episode_num) + '/step='\
+                            + str(step_num) + '/' + policy + '/'
+
+            test_folders.append(policy_folder)
+            user_per_test.append(user_num)
+            label_per_test.append(label)
+            legend_per_test.append(legend)
+
+    output_folder = 'output/multi_test/' + scenario_name + 'multi_user/power=' + str(args['power'])\
+                    + '/penalty=' + str(reward_penalty) + '/multi_alpha' + '/episode=' + str(episode_num)\
+                    + '/step=' + str(step_num) + '/policy=' + args['policy'] + '/'
+
+elif args['multi_alpha']:
+
+    label_key = 'Policy'
+    legend_key = '$\\alpha$'
+
+    user_num: int = args['user_num']
+
+    policies: [str] = ['0', '1450', '1451', '1452', 'dql']
+    labels: [str] = ['0', '1450', '1451', '1452', 'DQL']
+    alphas: [float] = [0.5, 1.0]
+    legends: [str] = ['0.5', '1.0']
+
+    scenario_name = args['update'] + '_update/user=' + str(user_num) + '/power=' + str(args['power']) + \
+                    '/penalty=' + str(reward_penalty)
+
+    output_folder = 'output/multi_test/' + scenario_name + '/multi_alpha' + '/episode=' \
+                    + str(episode_num) + '/step=' + str(step_num) + '/multi_policy/'
+
+    for label, policy in zip(labels, policies):
+        for legend, alpha in zip(legends, alphas):
+            policy_folder = 'output/test/' + scenario_name + '/alpha=' + str(alpha) + '/episode=' \
+                        + str(episode_num) + '/step=' + str(step_num) + '/' + policy + '/'
+            test_folders.append(policy_folder)
+            user_per_test.append(user_num)
+            label_per_test.append(label)
+            legend_per_test.append(legend)
+
+elif args['multi_user']:
+
+    label_key = 'Policy'
+    legend_key = '$N_{u}$'
+
+    alpha = args['alpha']
+
+    policies: [str] = ['0', '1450', '1451', '1452', 'dql']
+    labels: [str] = ['0', '1450', '1451', '1452', 'DQL']
+
+    users: [int] = [1, 5]
+    legends: [str] = ['1', '5']
+
+    scenario_name = args['update'] + '_update/'
+
+    for label, policy in zip(labels, policies):
+        for legend, user_num in zip(legends, users):
+            policy_folder = 'output/test/' + scenario_name + 'user=' + str(user_num) + '/power=' \
+                            + str(args['power']) + '/penalty=' + str(reward_penalty) + '/alpha=' \
+                            + str(alpha) + '/episode=' + str(episode_num) + '/step=' \
+                            + str(step_num) + '/' + policy + '/'
+
+            test_folders.append(policy_folder)
+            user_per_test.append(user_num)
+            label_per_test.append(label)
+            legend_per_test.append(legend)
+
+    output_folder = 'output/multi_test/' + scenario_name + 'multi_user/power=' + str(args['power']) \
+                    + '/penalty=' + str(reward_penalty) + '/alpha=' + str(alpha) + '/episode=' + str(episode_num) \
+                    + '/step=' + str(step_num) + '/multi_policy/'
+
+elif args['multi_policy']:
+
+    label_key = 'Policy'
+
+    user_num: int = args['user_num']
+
+    policies: [str] = ['0', '1450', '1451', '1452', 'dql']
+    labels: [str] = ['0', '1450', '1451', '1452', 'DQL']
+
+    scenario_name = args['update'] + '_update/user=' + str(user_num) + '/power=' + str(args['power']) + \
+                    '/penalty=' + str(reward_penalty)
+
+    output_folder = 'output/multi_test/' + scenario_name + '/alpha='\
+                    + str(args['alpha']) + '/episode=' + str(episode_num) + '/step=' + str(step_num) + '/multi_policy/'  # Output folder
+
+    for label, policy in zip(labels, policies):
+        policy_folder = 'output/test/' + scenario_name + policy + '/'
+        test_folders.append(policy_folder)
+        user_per_test.append(user_num)
+        label_per_test.append(label)
+        legend_per_test.append(None)
+
+else:
+    raise ValueError
+
+for data_type in ['state', 'performance']:
+    if not os.path.exists(output_folder + data_type + '/'):
+        os.makedirs(output_folder + data_type + '/')
+
+test_num = len(test_folders)
 agents = []
+max_penalty = reward_penalty + np.max([cf_mean_per_action[action] for action in action_labels])
 
-for i in range(policy_num):
+for i, user_num in enumerate(user_per_test):
     agent = CentralizedAgent(step_num,
                              episode_num,
                              state_dim,
                              action_num,
                              user_num,
-                             state_labels,
+                             state_full_labels,
                              action_labels,
                              state_normalization,
                              state_mask=state_mask,
@@ -73,7 +192,9 @@ for i in range(policy_num):
                              eps=1,
                              weight_decay=1)
 
-    agent.load_data(data_folders[i])
+    agent.load_data(test_folders[i])
+
+    agent.max_penalty = max_penalty
 
     agents.append(agent)
 
@@ -84,125 +205,202 @@ if plot_state:
     for i in range(state_dim):
 
         multi_data = []
-        multi_keys = []
-        state_label = state_labels[i]
+        multi_labels = []
+        multi_legends = []
+        state_key = state_labels[i]
+        state_full_label = state_full_labels[i]
         min_value, max_value = state_normalization[i]
 
-        for j in range(policy_num):
+        data_idx = agents[0].data_idx
+
+        for j in range(test_num):
             agent = agents[j]
-            policy_label = policy_labels[j]
+            label = label_per_test[j]
+            legend = legend_per_test[j]
 
             state_data = np.mean(agent.state_data, axis=0) * (max_value - min_value) + min_value
-            data_idx = agent.data_idx
 
             multi_data.append(state_data[i, :data_idx])
-            multi_keys.append(policy_label)
+
+            multi_labels.append(label)
+            multi_legends.append(legend)
+
+        multi_data = np.stack(multi_data)
 
         multi_boxplot(multi_data,
-                      multi_keys,
-                      state_label,
-                      output_folder + state_label + ' box')
+                      multi_labels,
+                      multi_legends,
+                      state_key,
+                      label_key,
+                      legend_key,
+                      output_folder + 'state/' + state_full_label.replace(' ', '_') + '_box',
+                      plot_format=plot_format,
+                      palette=state_palette)
 
         multi_violinplot(multi_data,
-                         multi_keys,
-                         state_label,
-                         output_folder + state_label + ' violin')
-
-        multi_density_plot(multi_data, multi_keys, state_label, output_folder + state_label + ' density')
+                         multi_labels,
+                         multi_legends,
+                         state_key,
+                         label_key,
+                         legend_key,
+                         output_folder + 'state/' + state_full_label.replace(' ', '_') + '_violin',
+                         plot_format=plot_format,
+                         palette=state_palette)
 
 # Reward
 
-if plot_reward:
+if plot_perf:
 
     multi_data = []
-    multi_keys = []
+    multi_labels = []
+    multi_legends = []
 
-    for j in range(policy_num):
+    data_idx = agents[0].data_idx
+
+    for j in range(test_num):
         agent = agents[j]
-        policy_label = policy_labels[j]
+        label = label_per_test[j]
+        legend = legend_per_test[j]
 
-        reward_data = np.mean(agent.reward_data, axis=0)
-        data_idx = agent.data_idx
+        reward_data = agent.reward_data.flatten()
 
         multi_data.append(reward_data[:data_idx])
-        multi_keys.append(policy_label)
+        multi_labels.append(label)
+        multi_legends.append(legend)
 
     multi_boxplot(multi_data,
-                  multi_keys,
+                  multi_labels,
+                  multi_legends,
                   'Reward',
-                  output_folder + 'reward box')
+                  label_key,
+                  legend_key,
+                  output_folder + 'performance/reward_box',
+                  plot_format=plot_format,
+                  palette=reward_palette)
 
     multi_violinplot(multi_data,
-                     multi_keys,
+                     multi_labels,
+                     multi_legends,
                      'Reward',
-                     output_folder + 'reward violin')
-
-    multi_density_plot(multi_data, multi_keys, 'Reward', output_folder + 'reward density')
+                     label_key,
+                     legend_key,
+                     output_folder + 'performance/reward_violin',
+                     plot_format=plot_format,
+                     palette=reward_palette)
 
 # QoS
 
-if plot_qos:
-
     multi_data = []
-    multi_keys = []
+    multi_labels = []
+    multi_legends = []
 
-    for j in range(policy_num):
+    data_idx = agents[0].data_idx
+
+    for j in range(test_num):
         agent = agents[j]
-        policy_label = policy_labels[j]
+        label = label_per_test[j]
+        legend = legend_per_test[j]
 
-        qos_data = np.mean(agent.qos_data, axis=0)
-        data_idx = agent.data_idx
+        qos_data = agent.qos_data.flatten()
 
         multi_data.append(qos_data[:data_idx])
-        multi_keys.append(policy_label)
-
-    multi_boxplot(multi_data,
-                  multi_keys,
-                  'QoS',
-                  output_folder + 'qos box')
+        multi_labels.append(label)
+        multi_legends.append(legend)
 
     multi_violinplot(multi_data,
-                     multi_keys,
-                     'QoS',
-                     output_folder + 'qos violin')
+                     multi_labels,
+                     multi_legends,
+                     'Quality of Service',
+                     label_key,
+                     legend_key,
+                     output_folder + 'performance/qos_violin',
+                     plot_format=plot_format,
+                     palette=qos_palette)
 
     multi_histplot(multi_data,
-                     multi_keys,
-                     'QoS',
-                     output_folder + 'qos hist')
+                   multi_labels,
+                   multi_legends,
+                   'Quality of Service',
+                   label_key,
+                   legend_key,
+                   output_folder + 'performance/qos_hist',
+                   plot_format=plot_format,
+                   palette=qos_palette)
 
-    multi_density_plot(multi_data, multi_keys, 'QoS', output_folder + 'qos density')
-
-# QoE
-
-if plot_qoe:
+# Chamfer Distance
 
     multi_data = []
-    multi_keys = []
+    multi_labels = []
+    multi_legends = []
 
-    for j in range(policy_num):
+    data_idx = agents[0].data_idx
+
+    for j in range(test_num):
         agent = agents[j]
-        policy_label = policy_labels[j]
+        label = label_per_test[j]
+        legend = legend_per_test[j]
 
-        qoe_data = np.mean(agent.qoe_data, axis=0)
-        data_idx = agent.data_idx
+        chamfer_data = agent.chamfer_data.flatten()
 
-        multi_data.append(qoe_data[:data_idx])
-        multi_keys.append(policy_label)
-
-    multi_boxplot(multi_data,
-                  multi_keys,
-                  'Chamfer Distance',
-                  output_folder + 'qoe box')
+        multi_data.append(chamfer_data[:data_idx])
+        multi_labels.append(label)
+        multi_legends.append(legend)
 
     multi_violinplot(multi_data,
-                     multi_keys,
+                     multi_labels,
+                     multi_legends,
                      'Chamfer Distance',
-                     output_folder + 'qoe violin')
+                     label_key,
+                     legend_key,
+                     output_folder + 'performance/chamfer_violin',
+                     plot_format=plot_format,
+                     palette=cd_palette)
 
     multi_histplot(multi_data,
-                   multi_keys,
+                   multi_labels,
+                   multi_legends,
                    'Chamfer Distance',
-                   output_folder + 'qoe hist')
+                   label_key,
+                   legend_key,
+                   output_folder + 'performance/chamfer_hist',
+                   plot_format=plot_format,
+                   palette=cd_palette)
 
-    multi_density_plot(multi_data, multi_keys, 'Chamfer Distance', output_folder + 'qoe density')
+    # QoE
+
+    multi_data = []
+    multi_labels = []
+    multi_legends = []
+
+    data_idx = agents[0].data_idx
+
+    for j in range(test_num):
+        agent = agents[j]
+        label = label_per_test[j]
+        legend = legend_per_test[j]
+
+        qoe_data = (max_penalty - agent.chamfer_data.flatten()) / max_penalty
+
+        multi_data.append(qoe_data[:data_idx])
+        multi_labels.append(label)
+        multi_legends.append(legend)
+
+    multi_violinplot(multi_data,
+                     multi_labels,
+                     multi_legends,
+                     'QoE',
+                     label_key,
+                     legend_key,
+                     output_folder + 'performance/qoe_violin',
+                     plot_format=plot_format,
+                     palette=qoe_palette)
+
+    multi_histplot(multi_data,
+                   multi_labels,
+                   multi_legends,
+                   'QoE',
+                   label_key,
+                   legend_key,
+                   output_folder + 'performance/qoe_hist',
+                   plot_format=plot_format,
+                   palette=qoe_palette)

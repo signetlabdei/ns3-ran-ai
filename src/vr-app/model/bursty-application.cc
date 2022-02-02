@@ -37,6 +37,7 @@
 #include "ns3/boolean.h"
 #include "ns3/burst-generator.h"
 #include "bursty-application.h"
+#include "kitti-trace-burst-generator.h"
 
 namespace ns3 {
 
@@ -71,8 +72,11 @@ BurstyApplication::GetTypeId (void)
     .AddAttribute ("Protocol", "The type of protocol to use. This should be "
                    "a subclass of ns3::SocketFactory",
                    TypeIdValue (UdpSocketFactory::GetTypeId ()),
-                   MakeTypeIdAccessor (&BurstyApplication::m_socketTid),
-                   MakeTypeIdChecker ())
+                    MakeTypeIdAccessor (&BurstyApplication::m_socketTid), MakeTypeIdChecker ())
+    .AddAttribute ("EncodingDelay", "Decide wheter or not to take into account encoding delay before sending bursts",
+                    BooleanValue (false),
+                    MakeBooleanAccessor (&BurstyApplication::m_encodingDelay),
+                    MakeBooleanChecker ())
     .AddTraceSource ("FragmentTx", "A fragment of the burst is sent",
                      MakeTraceSourceAccessor (&BurstyApplication::m_txFragmentTrace),
                      "ns3::BurstSink::SeqTsSizeFragCallback")
@@ -168,7 +172,43 @@ BurstyApplication::StartApplication ()
 
   // Ensure no pending event
   CancelEvents ();
-  SendBurst ();
+
+  if (m_encodingDelay)
+  {
+    uint32_t additionalDelay = 0; // must be added in milliseconds
+    uint32_t appMode = DynamicCast<KittiTraceBurstGenerator>(m_burstGenerator)->GetModel();
+
+    if (appMode == 1 || appMode == 2)
+    {
+      additionalDelay = 56; // inference time
+    }
+    else if (appMode == 1150)
+    {
+      additionalDelay = 23.305455; // encoding time
+    }
+    else if (appMode == 1450)
+    {
+      additionalDelay = 28.265455; // encoding time
+    }
+    else if (appMode == 1451)
+    {
+      additionalDelay = 56 + 12.976364; // inference time + encoding time
+    }
+    else if (appMode == 1452)
+    {
+      additionalDelay = 56 + 1.958182; // inference time + encoding time
+    }
+    else
+    {
+      NS_LOG_WARN("Invalid application mode.");
+    }
+
+    Simulator::Schedule (MilliSeconds(additionalDelay), &BurstyApplication::SendBurst, this);
+  }
+  else
+  {
+    SendBurst ();
+  }
 }
 
 void
@@ -226,6 +266,41 @@ BurstyApplication::SendBurst ()
   SendFragmentedBurst (burstSize);
 
   // schedule next burst
+  if (m_encodingDelay)
+  {
+
+    uint32_t appMode = DynamicCast<KittiTraceBurstGenerator>(m_burstGenerator)->GetModel();
+    NS_LOG_UNCOND ("Application mode " << appMode);
+
+    uint32_t additionalDelay = 0; // must be added in milliseconds
+    if (appMode == 1 || appMode == 2)
+    {
+      additionalDelay = 56; // inference time
+    }
+    else if (appMode == 1150)
+    {
+      additionalDelay = 23.305455; // encoding time
+    }
+    else if (appMode == 1450)
+    {
+      additionalDelay = 28.265455; // encoding time
+    }
+    else if (appMode == 1451)
+    {
+      additionalDelay = 56 + 12.976364; // inference time + encoding time
+    }
+    else if (appMode == 1452)
+    {
+      additionalDelay = 56 + 1.958182; // inference time + encoding time
+    }
+    else
+    {
+      NS_LOG_WARN("Invalid application mode.");
+    }
+
+    period = period + MilliSeconds(additionalDelay);
+  }
+
   NS_LOG_DEBUG ("Next burst scheduled in " << period.As (Time::S));
   m_nextBurstEvent = Simulator::Schedule (period, &BurstyApplication::SendBurst, this);
 }

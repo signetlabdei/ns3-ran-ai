@@ -2,9 +2,10 @@ import torch
 import copy
 import numpy as np
 from torch.nn import Module
-from Agent.DoubleQLearning import DQL
-from Agent.NeuralNetwork import LinearNeuralNetwork
-from Agent.Linearplot import linear_plot, multi_linear_plot
+from agent.DoubleQLearning import DQL
+from agent.NeuralNetwork import LinearNeuralNetwork
+from plot.Linearplot import linear_plot, multi_linear_plot
+import seaborn as sns
 
 
 class CentralizedAgent(object):
@@ -30,10 +31,12 @@ class CentralizedAgent(object):
                  memory_capacity: int,
                  learning_rate: float,
                  eps: float,
-                 weight_decay: float):
+                 weight_decay: float,
+                 format=None):
 
         # Number of steps and episodes
 
+        self.format = format
         self.step_num, self.episode_num = step_num, episode_num
 
         # State dimension
@@ -55,6 +58,7 @@ class CentralizedAgent(object):
         self.state_labels = state_labels
         self.action_labels = action_labels
         self.state_normalization = state_normalization
+        self.max_penalty = None
 
         # Primary and target networks used in the training
         # The primary network is used to choose new actions
@@ -85,7 +89,8 @@ class CentralizedAgent(object):
         self.states = [None] * self.user_num
         self.actions = [None] * self.user_num
         self.rewards = [None] * self.user_num
-        self.new_states = [None] * self.user_num
+        self.old_states = [None] * self.user_num
+        self.old_actions = [None] * self.user_num
 
         self.data_idx = -1
 
@@ -95,7 +100,7 @@ class CentralizedAgent(object):
         self.action_data = np.zeros((self.user_num, self.action_num, step_num * episode_num), dtype=np.float32)
         self.q_value_data = np.zeros((self.user_num, self.action_num, step_num * episode_num), dtype=np.float32)
 
-        self.qoe_data = np.zeros((self.user_num, step_num * episode_num), dtype=np.float32)
+        self.chamfer_data = np.zeros((self.user_num, step_num * episode_num), dtype=np.float32)
         self.qos_data = np.zeros((self.user_num, step_num * episode_num), dtype=np.float32)
         self.reward_data = np.zeros((self.user_num, step_num * episode_num), dtype=np.float32)
         self.temperature_data = np.zeros(step_num * episode_num, dtype=np.float32)
@@ -106,7 +111,8 @@ class CentralizedAgent(object):
         self.states = [None] * self.user_num
         self.actions = [None] * self.user_num
         self.rewards = [None] * self.user_num
-        self.new_states = [None] * self.user_num
+        self.old_states = [None] * self.user_num
+        self.old_actions = [None] * self.user_num
 
     def get_action(self,
                    states: [np.ndarray],
@@ -142,12 +148,12 @@ class CentralizedAgent(object):
         return actions, q_values
 
     def update(self,
-               actions: [int],
+               action_indexes: [int],
                q_values: [np.ndarray],
                rewards: [float],
-               new_states: [np.ndarray],
-               qos: [float],
-               qoe: [float],
+               states: [np.ndarray],
+               qos_per_user: [float],
+               cd_per_user: [float],
                temp: float,
                train: bool):
 
@@ -161,30 +167,27 @@ class CentralizedAgent(object):
 
         for user_idx in range(self.user_num):
 
-            user_action = actions[user_idx]
-            user_q_values = q_values[user_idx]
-            user_reward = rewards[user_idx]
-            user_new_state = new_states[user_idx]
-            user_qos = qos[user_idx]
-            user_qoe = qoe[user_idx]
-
             # Update the learning data
 
-            self.q_value_data[user_idx, :, self.data_idx] = user_q_values
             action_vector = np.zeros(self.action_num)
-            action_vector[user_action] = 1
+            action_vector[action_indexes[user_idx]] = 1
             self.action_data[user_idx, :, self.data_idx] = action_vector
-            self.reward_data[user_idx, self.data_idx] = user_reward
-            self.state_data[user_idx, :, self.data_idx] = user_new_state
-            self.qos_data[user_idx, self.data_idx] = user_qos
-            self.qoe_data[user_idx, self.data_idx] = user_qoe
+
+            self.q_value_data[user_idx, :, self.data_idx] = q_values[user_idx]
+
+            self.reward_data[user_idx, self.data_idx] = rewards[user_idx]
+            self.state_data[user_idx, :, self.data_idx] = states[user_idx]
+            self.qos_data[user_idx, self.data_idx] = qos_per_user[user_idx]
+            self.chamfer_data[user_idx, self.data_idx] = cd_per_user[user_idx]
 
         # Update the transition variables
 
-        self.states = [copy.copy(new_state) for new_state in self.new_states]
-        self.actions = [action for action in actions]
+        self.old_states = [copy.copy(new_state) for new_state in self.states]
+        self.old_actions = [copy.copy(new_state) for new_state in self.actions]
+
+        self.actions = [action for action in action_indexes]
         self.rewards = [reward for reward in rewards]
-        self.new_states = [new_state[self.state_mask] for new_state in new_states]
+        self.states = [new_state[self.state_mask] for new_state in states]
 
         if train:
 
@@ -192,11 +195,10 @@ class CentralizedAgent(object):
 
             if self.states[0] is not None:
                 for user_idx in range(self.user_num):
-
-                    self.dql.store_transition(np.copy(self.states[user_idx]),
-                                              self.actions[user_idx],
+                    self.dql.store_transition(np.copy(self.old_states[user_idx]),
+                                              self.old_actions[user_idx],
                                               self.rewards[user_idx],
-                                              np.copy(self.new_states[user_idx]))
+                                              np.copy(self.states[user_idx]))
 
             # If the replay memory is full, perform a learning step
 
@@ -220,7 +222,7 @@ class CentralizedAgent(object):
         np.save(data_folder + 'temperatures.npy', self.temperature_data)
         np.save(data_folder + 'losses.npy', self.loss_data)
         np.save(data_folder + 'qos.npy', self.qos_data)
-        np.save(data_folder + 'qoe.npy', self.qoe_data)
+        np.save(data_folder + 'chamfer_distances.npy', self.chamfer_data)
         np.save(data_folder + 'data_idx.npy', self.data_idx)
 
     def save_model(self, data_folder: str):
@@ -242,12 +244,8 @@ class CentralizedAgent(object):
         self.temperature_data = np.load(data_folder + 'temperatures.npy')
         self.loss_data = np.load(data_folder + 'losses.npy')
 
-        try:
-            self.qos_data = np.load(data_folder + 'qos.npy')
-            self.qoe_data = np.load(data_folder + 'qoe.npy')
-
-        except:
-            pass
+        self.qos_data = np.load(data_folder + 'qos.npy')
+        self.chamfer_data = np.load(data_folder + 'chamfer_distances.npy')
 
     def load_model(self, data_folder: str):
 
@@ -259,12 +257,20 @@ class CentralizedAgent(object):
         Plot the learning data
         """
 
+        state_palette = sns.color_palette('rocket', n_colors=np.sum(self.state_mask))
+        action_palette = sns.color_palette('rocket_r', n_colors=3)
+        single_palette = sns.color_palette('rocket', n_colors=1)
+
         for user_idx in range(self.user_num):
-            user_folder = data_folder + str(user_idx) + '/'
+
+            ### LEARN PLOT ###
+
+            user_folder = data_folder + '/learn/' + str(user_idx) + '/'
 
             # States
 
-            multi_data = [self.state_data[user_idx, i, :self.data_idx] for i in range(self.state_dim) if self.state_mask[i]]
+            multi_data = [self.state_data[user_idx, i, :self.data_idx] for i in range(self.state_dim) if
+                          self.state_mask[i]]
 
             multi_keys = np.array(self.state_labels)[self.state_mask]
 
@@ -273,7 +279,9 @@ class CentralizedAgent(object):
                               'Episode',
                               'State',
                               episode_num,
-                              user_folder + 'states')
+                              user_folder + 'states',
+                              palette=state_palette,
+                              plot_format=self.format)
 
             # Q values
 
@@ -285,7 +293,9 @@ class CentralizedAgent(object):
                               'Episode',
                               'Q value',
                               episode_num,
-                              user_folder + 'q_values')
+                              user_folder + 'q_values',
+                              palette=action_palette,
+                              plot_format=self.format)
 
             # Actions
 
@@ -297,39 +307,55 @@ class CentralizedAgent(object):
                               'Episode',
                               'Action probability',
                               episode_num,
-                              user_folder + 'actions')
+                              user_folder + 'actions',
+                              palette=action_palette,
+                              plot_format=self.format)
 
-            # Single feature
+            # Reward
+
+            linear_plot(self.reward_data[user_idx, :self.data_idx],
+                        'Episode',
+                        'Reward',
+                        episode_num,
+                        user_folder + 'rewards',
+                        palette=single_palette,
+                        plot_format=self.format)
+
+            ### SINGLE FEATURE PLOT ###
+
+            user_folder = data_folder + '/state/' + str(user_idx) + '/'
 
             for i in range(self.state_dim):
-
                 min_value, max_value = self.state_normalization[i]
 
                 linear_plot(self.state_data[user_idx, i, :self.data_idx] * (max_value - min_value) + min_value,
                             'Episode',
                             self.state_labels[i],
                             episode_num,
-                            user_folder + str(self.state_labels[i]))
+                            user_folder + self.state_labels[i].replace(' ', '_'),
+                            palette=single_palette,
+                            plot_format=self.format)
 
-            # Rewards
+            ### PERFORMANCE PLOT ###
 
-            linear_plot(self.reward_data[user_idx, :self.data_idx],
-                        'Episode',
-                        'Reward',
-                        episode_num,
-                        user_folder + 'rewards')
+            user_folder = data_folder + '/performance/' + str(user_idx) + '/'
 
-            linear_plot(self.qoe_data[user_idx, :self.data_idx],
+            linear_plot(self.chamfer_data[user_idx, :self.data_idx],
                         'Episode',
                         'Chamfer Distance',
                         episode_num,
-                        user_folder + 'qoe')
+                        user_folder + 'chamfer_distances',
+                        palette=single_palette,
+                        plot_format=self.format)
 
-            linear_plot(self.qos_data[user_idx, :self.data_idx],
-                        'Episode',
-                        'QoS',
-                        episode_num,
-                        user_folder + 'qos')
+            linear_plot(
+                (self.max_penalty - self.chamfer_data[user_idx, :self.data_idx]) / self.max_penalty,
+                'Episode',
+                'QoE',
+                episode_num,
+                user_folder + 'qoe',
+                palette=single_palette,
+                plot_format=self.format)
 
         # States
 
@@ -343,7 +369,9 @@ class CentralizedAgent(object):
                           'Episode',
                           'State',
                           episode_num,
-                          data_folder + 'states')
+                          data_folder + 'learn/states',
+                          palette=state_palette,
+                          plot_format=self.format)
 
         # Q values
 
@@ -357,7 +385,9 @@ class CentralizedAgent(object):
                           'Episode',
                           'Q value',
                           episode_num,
-                          data_folder + 'q_values')
+                          data_folder + 'learn/q_values',
+                          palette=action_palette,
+                          plot_format=self.format)
 
         # Actions
 
@@ -371,7 +401,41 @@ class CentralizedAgent(object):
                           'Episode',
                           'Action probability',
                           episode_num,
-                          data_folder + 'actions')
+                          data_folder + 'learn/actions',
+                          palette=action_palette,
+                          plot_format=self.format)
+
+        # Rewards
+
+        reward_data = np.mean(self.reward_data, axis=0)
+
+        linear_plot(reward_data[:self.data_idx],
+                    'Episode',
+                    'Reward',
+                    episode_num,
+                    data_folder + 'learn/rewards',
+                    palette=single_palette,
+                    plot_format=self.format)
+
+        # Loss
+
+        linear_plot(self.loss_data[:self.data_idx],
+                    'Episode',
+                    'Loss',
+                    episode_num,
+                    data_folder + 'learn/losses',
+                    palette=single_palette,
+                    plot_format=self.format)
+
+        # Temperature
+
+        linear_plot(self.temperature_data[:self.data_idx],
+                    'Episode',
+                    'Temperature',
+                    episode_num,
+                    data_folder + 'learn/temperatures',
+                    palette=single_palette,
+                    plot_format=self.format)
 
         # Single feature
 
@@ -384,17 +448,9 @@ class CentralizedAgent(object):
                         'Episode',
                         self.state_labels[i],
                         episode_num,
-                        data_folder + str(self.state_labels[i]))
-
-        # Rewards
-
-        reward_data = np.mean(self.reward_data, axis=0)
-
-        linear_plot(reward_data[:self.data_idx],
-                    'Episode',
-                    'Reward',
-                    episode_num,
-                    data_folder + 'rewards')
+                        data_folder + 'state/' + self.state_labels[i].replace(' ', '_'),
+                        palette=single_palette,
+                        plot_format=self.format)
 
         # QoS
 
@@ -404,30 +460,26 @@ class CentralizedAgent(object):
                     'Episode',
                     'QoS',
                     episode_num,
-                    data_folder + 'qos')
+                    data_folder + 'performance/qos',
+                    palette=single_palette,
+                    plot_format=self.format)
 
         # QoE
 
-        qoe_data = np.mean(self.qoe_data, axis=0)
+        chamfer_data = np.mean(self.chamfer_data, axis=0)
 
-        linear_plot(qoe_data[:self.data_idx],
+        linear_plot(chamfer_data[:self.data_idx],
                     'Episode',
                     'Chamfer Distance',
                     episode_num,
-                    data_folder + 'qoe')
+                    data_folder + 'performance/chamfer_distances',
+                    palette=single_palette,
+                    plot_format=self.format)
 
-        # Loss
-
-        linear_plot(self.loss_data[:self.data_idx],
+        linear_plot((self.max_penalty - chamfer_data[:self.data_idx]) / self.max_penalty,
                     'Episode',
-                    'Loss',
+                    'QoE',
                     episode_num,
-                    data_folder + 'losses')
-
-        # Temperature
-
-        linear_plot(self.temperature_data[:self.data_idx],
-                    'Episode',
-                    'Temperature',
-                    episode_num,
-                    data_folder + 'temperatures')
+                    data_folder + 'performance/qoe',
+                    palette=single_palette,
+                    plot_format=self.format)

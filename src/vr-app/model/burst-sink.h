@@ -28,6 +28,7 @@
 #include "ns3/inet-socket-address.h"
 #include "ns3/socket.h"
 #include "ns3/seq-ts-size-frag-header.h"
+#include "kitti-trace-burst-generator.h"
 #include <unordered_map>
 
 namespace ns3 {
@@ -109,6 +110,12 @@ public:
   std::list<Ptr<Socket>> GetAcceptedSockets (void) const;
 
   /**
+   * \brief Include the sending application burst generator to this class
+   * \param ktb pointer to KittiTraceBurstGenerator object (as of now, it does not make sense using other generators)
+   */
+  void ConnectBurstGenerator (Ptr<KittiTraceBurstGenerator> ktb);
+
+  /**
    * TracedCallback signature for a reception with addresses and SeqTsSizeFragHeader
    *
    * \param f The fragment received (without the SeqTsSize header)
@@ -148,6 +155,15 @@ private:
    * \param socket the connected socket
    */
   void HandlePeerError (Ptr<Socket> socket);
+  /**
+   * \brief Fire the delayed receive callback
+   * \param burstBuffer received packet burst
+   * \param from the address the connection is from
+   * \param localAddress the local address
+   * \param header burst header
+   */
+  void HandleCorrectReception (Ptr<Packet> burstBuffer, const Address &from,
+                               const Address &localAddress, SeqTsSizeFragHeader header);
 
   /**
    * \brief Simple burst handler
@@ -209,6 +225,9 @@ private:
   uint64_t m_totRxBursts{0}; //!< Total bursts received
   uint64_t m_totRxFragments{0}; //!< Total fragments received
   uint64_t m_totRxBytes{0}; //!< Total bytes received
+
+  Ptr<KittiTraceBurstGenerator> m_appBurstGenerator{0}; //!< Pointer to the burst generator at the sending application
+  bool m_decodingDelay; //!< Flag that determines if the decoding delay has to be added to the received burst 
 
   // Traced Callback
   /// Callback for tracing the fragment Rx events, includes source, destination addresses, and headers

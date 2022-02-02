@@ -179,6 +179,7 @@ private:
   uint64_t m_totTxBursts; //!< Total bursts sent
   uint64_t m_totTxFragments; //!< Total fragments sent
   uint64_t m_totTxBytes; //!< Total bytes sent
+  bool m_encodingDelay; //!< Flag that determines if the encoding delay has to be added to the burst to be sent 
 
   // Traced Callbacks
   /// Callback for transmitted burst

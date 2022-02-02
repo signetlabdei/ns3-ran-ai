@@ -1,6 +1,6 @@
 import torch
 from torch.nn import Module
-from Agent.NeuralNetwork import LinearNeuralNetwork
+from agent.NeuralNetwork import LinearNeuralNetwork
 import numpy as np
 import random
 
@@ -136,6 +136,8 @@ class DQL(object):
         """
         Load the learning weights of the neural network
         """
+
+        print("Load learning model from: ", output_folder)
 
         params = torch.load(output_folder + 'model')
         self.primary_net.load_state_dict(params)

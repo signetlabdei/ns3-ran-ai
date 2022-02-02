@@ -281,3 +281,81 @@ def calc_ofdm_sym (result):
         group.reset_index (inplace=True)
         sampledDf = sampledDf.append (group, ignore_index=True)
     return sampledDf.values.tolist ()
+
+"""
+    Read RanAiStats.txt trace file and return a list containing the 
+    parsed values. Can be used as input for the function 
+    get_results_as_dataframe provided by sem.
+    Args:
+        result (str): the content of RanAiStats.txt as a string
+"""
+@sem.utils.yields_multiple_results
+@sem.utils.output_labels(['Time [s]',
+                          'IMSI',
+                          'MCS',
+                          'OFDM symbols',
+                          'SINR [dB]',
+                          'RLC tx pcks',
+                          'RLC tx bytes',
+                          'RLC rx pcks',
+                          'RLC rx bytes',
+                          'RLC avg delay',
+                          'RLC std delay',
+                          'RLC min delay',
+                          'RLC max delay',
+                          'PDCP tx pcks',
+                          'PDCP tx bytes',
+                          'PDCP rx pcks',
+                          'PDCP rx bytes',
+                          'PDCP avg delay',
+                          'PDCP std delay',
+                          'PDCP min delay',
+                          'PDCP max delay',
+                          'APP tx pcks',
+                          'APP tx bytes',
+                          'APP rx pcks',
+                          'APP rx bytes',
+                          'APP avg delay',
+                          'APP std delay',
+                          'APP min delay',
+                          'APP max delay'
+                          ])
+@sem.utils.only_load_some_files(r'.*RanAiStats.txt')
+def read_ran_ai(result):
+    data = []
+    lines = result['output']['RanAiStats.txt'].splitlines()
+
+    for line in lines[1:]:
+        values = line.split("\t")
+        row = [float(values[0]),
+               int(values[1]),
+               float(values[2]),
+               float(values[3]),
+               float(values[4]),
+               float(values[5]),
+               float(values[6]),
+               float(values[7]),
+               float(values[8]),
+               float(values[9]),
+               float(values[10]),
+               float(values[11]),
+               float(values[12]),
+               float(values[13]),
+               float(values[14]),
+               float(values[15]),
+               float(values[16]),
+               float(values[17]),
+               float(values[18]),
+               float(values[19]),
+               float(values[20]),
+               float(values[21]),
+               float(values[22]),
+               float(values[23]),
+               float(values[24]),
+               float(values[25]),
+               float(values[26]),
+               float(values[27]),
+               float(values[28])
+               ]
+        data += [row]
+    return data

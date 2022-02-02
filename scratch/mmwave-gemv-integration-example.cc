@@ -38,6 +38,7 @@
 #include "ns3/bursty-helper.h"
 #include "ns3/burst-sink-helper.h"
 #include "ns3/bursty-app-stats-calculator.h"
+#include "ns3/kitti-trace-burst-generator.h"
 
 using namespace ns3;
 using namespace mmwave;
@@ -73,6 +74,7 @@ main (int argc, char *argv[])
   uint32_t kittiModel = 1450;
   double txPower = 30.0;
   double tracesPeriodicity = 100;
+  bool additionalDelay = true;
 
   CommandLine cmd;
   cmd.AddValue ("numUes", "Number of UE nodes", numUes);
@@ -88,12 +90,15 @@ main (int argc, char *argv[])
   cmd.AddValue ("kittiModel", "Compression type [1450, 1451, 1452, 1150]", kittiModel);
   cmd.AddValue ("txPower", "The vehicle tx power in dBm", txPower);
   cmd.AddValue ("tracesPeriodicity", "Periodicity used to generate the traces in milliseconds", tracesPeriodicity);
+  cmd.AddValue ("additionalDelay", "True in case you want to account for encoding/decoding delay", additionalDelay);
   cmd.Parse (argc, argv);
   
   Config::SetDefault ("ns3::MmWaveBearerStatsCalculator::AggregatedStats", BooleanValue (true));
   Config::SetDefault ("ns3::MmWaveBearerStatsCalculator::EpochDuration", TimeValue (MilliSeconds (tracesPeriodicity)));
   Config::SetDefault ("ns3::BurstyAppStatsCalculator::EpochDuration", TimeValue (MilliSeconds (tracesPeriodicity)));
   Config::SetDefault ("ns3::KittiTraceBurstGenerator::Model", UintegerValue (kittiModel));
+  Config::SetDefault ("ns3::BurstyApplication::EncodingDelay", BooleanValue (additionalDelay));
+  Config::SetDefault ("ns3::BurstSink::DecodingDelay", BooleanValue (additionalDelay));
   Config::SetDefault ("ns3::MmWavePhyMacCommon::Bandwidth", DoubleValue (bandwidth));
   Config::SetDefault ("ns3::MmWaveHelper::RlcAmEnabled", BooleanValue (true));
   Config::SetDefault ("ns3::UdpClient::PacketSize", UintegerValue (packetSizeBytes));
@@ -267,6 +272,9 @@ main (int argc, char *argv[])
           serverApps.Add (burstSinkHelper.Install (remoteHost));
           Ptr<BurstSink> burstSink = DynamicCast<BurstSink> (serverApps.Get ( serverApps.GetN() - 1 )); // obtain the last one inserted
 
+          // Link the burst generator to the bursty sink to process the correct reception delay
+          Ptr<KittiTraceBurstGenerator> ktb = DynamicCast<KittiTraceBurstGenerator>(burstyApp->GetBurstGenerator());
+          burstSink->ConnectBurstGenerator (ktb);
           // Connect application traces
           burstSink->TraceConnectWithoutContext ("BurstRx", MakeBoundCallback (&RxBurstCallback, ueNodes.Get (u)->GetId(), statsCalculator));
         }
