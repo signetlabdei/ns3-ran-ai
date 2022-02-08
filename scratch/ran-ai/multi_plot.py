@@ -10,8 +10,13 @@ import os
 import argparse
 
 parser = argparse.ArgumentParser()
+
+# Determine wheter to compare the outcomes of different simulation while varying alpha
 parser.add_argument('-multi_alpha', '--multi_alpha', action='store_const', const=True, default=False)
+# Determine wheter to compare the outcomes of different simulation while varying the number of users
 parser.add_argument('-multi_user', '--multi_user', action='store_const', const=True, default=False)
+
+# Parameters of the scenario analyzed
 parser.add_argument('-user', '--user_num', type=int, default=1)
 parser.add_argument('-policy', '--policy', type=str, default='dql')
 parser.add_argument('-penalty', '--reward_penalty', type=float, default=10)
@@ -154,8 +159,8 @@ elif args['multi_policy']:
                     '/penalty=' + str(reward_penalty)
 
     output_folder = 'output/multi_test/' + scenario_name + '/alpha='\
-                    + str(args['alpha']) + '/episode=' + str(episode_num) + '/step=' + str(step_num) + '/multi_policy/'  # Output folder
-
+                    + str(args['alpha']) + '/episode=' + str(episode_num) + '/step=' + str(step_num) + '/multi_policy/' 
+                    
     for label, policy in zip(labels, policies):
         policy_folder = 'output/test/' + scenario_name + policy + '/'
         test_folders.append(policy_folder)

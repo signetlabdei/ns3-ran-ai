@@ -39,6 +39,8 @@ def run_online_episode(action_num: int,
             if data is None or step >= step_num:
                 break
 
+            # Process the agent state
+
             new_states, state_imsi_list = state_process(data.env.imsiStatsMap,
                                                         state_feature_indexes,
                                                         state_feature_normalization,
@@ -47,6 +49,8 @@ def run_online_episode(action_num: int,
                                                         state_dim,
                                                         user_num,
                                                         online=True)
+
+            # Process the agent reward
 
             rewards, qos_per_user, cd_per_user = reward_process(data.env.imsiStatsMap,
                                                                 app_pdr_indexes,
@@ -63,6 +67,8 @@ def run_online_episode(action_num: int,
 
             states = [np.copy(new_state) for new_state in new_states]
 
+            # Get the agent action and q values
+
             action_indexes, q_values = agent.get_action(states, temp)
 
             if agent_policy == 'random':
@@ -73,6 +79,8 @@ def run_online_episode(action_num: int,
 
                 action_indexes = [default_action_index] * user_num
 
+            # Update tha agent data
+
             agent.update(action_indexes,
                          q_values,
                          rewards,
@@ -81,6 +89,8 @@ def run_online_episode(action_num: int,
                          cd_per_user,
                          temp,
                          algorithm_training)
+
+            # Implement the agent action in the ns3 environment
 
             for user_idx, action_idx in enumerate(action_indexes):
                 imsi = state_imsi_list[user_idx]

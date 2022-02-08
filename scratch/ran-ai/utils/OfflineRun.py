@@ -39,9 +39,13 @@ def run_offline_episode(user_num: int,
     if step_num is None:
         step_num = len(episode_data_per_user[0])
 
+    # Repeat per each step of the episode
+
     for step in range(step_num):
 
         step_data_per_user = [user_data.loc[step] for user_data in episode_data_per_user]
+
+        # Process the agent state
 
         new_states, imsi_list = state_process(step_data_per_user,
                                               state_features,
@@ -51,6 +55,8 @@ def run_offline_episode(user_num: int,
                                               state_dim,
                                               user_num,
                                               online=False)
+
+        # Process the agent reward
 
         rewards, qos_per_user, cd_per_user = reward_process(step_data_per_user,
                                                             app_pdr_labels,
@@ -67,7 +73,11 @@ def run_offline_episode(user_num: int,
 
         states = [np.copy(new_state) for new_state in new_states]
 
+        # Get the agent q values
+
         _, q_values = agent.get_action(states, 0)
+
+        # Update the data of the agent
 
         agent.update(action_indexes,
                      q_values,

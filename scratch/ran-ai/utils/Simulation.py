@@ -4,27 +4,32 @@ from agent.Agent import CentralizedAgent
 
 
 def get_input(args: []):
-    algorithm_training = args['train']
-    algorithm_testing = args['test']
-    offline_running = args['offline']
-    agent_policy = args['agent_policy']
+
+    algorithm_training = args['train'] # Train the algorithm
+    algorithm_testing = args['test'] # Test the algorithm
+    offline_running = args['offline'] # Train the algorithm
+    agent_policy = args['agent_policy'] # Agent policy
+
     if algorithm_training:
         assert agent_policy == 'dql'
 
-    running = args['run']
-
+    running = args['run'] # Run the simulation
     user_num = args['user_num']  # Number of users
     tx_power = args['tx_power']  # Tx power
     reward_penalty = args['reward_penalty']  # Reward penalty when QoS is violated
+    plot_format = args['format'] # Format of the output plots
+    mode = args['mode'] # KPI of the communication scenario
     
     if args['multi_alpha']:
         reward_alpha = [0.5, 1.0]
     else:
         reward_alpha = [args['reward_alpha']]  # Reward parameter to balance QoS and QoE
+
     step_num = args['step_num']  # Number of steps per episode
     transfer = args['transfer']  # Transfer learning
     input_offline_running = args['input_offline']  # Offline input
 
+    # Ideal or real action update
     if args['update'] == 'ideal':
         ideal_update = True
     elif args['update'] == 'real':
@@ -32,6 +37,7 @@ def get_input(args: []):
     else:
         raise ValueError
 
+    # Consider the delay due to data encoding
     if args['delay'] == 'add':
         additional_delay = True
     elif args['delay'] == 'none':
@@ -41,6 +47,8 @@ def get_input(args: []):
 
     if offline_running:
         offline_folder = 'offline_dataset/'
+
+        # Offline data folder
         if ideal_update:
             if additional_delay:
                 offline_folder += 'ideal_update_add_delay/user=' + str(user_num) + '/power=' + str(tx_power) + '/process_data/'
@@ -52,6 +60,7 @@ def get_input(args: []):
             else:
                 offline_folder += 'real_update/user=' + str(user_num) + '/power=' + str(tx_power) + '/process_data/'
 
+        # Number of episode
         if args['episode_num'] is None:
             vehicle_folders = os.listdir(offline_folder)
             vehicle_num = len(vehicle_folders)
@@ -65,21 +74,29 @@ def get_input(args: []):
                 raise ValueError
 
     else:
-        episode_num = args['episode_num']  # Number of episodes
+
+        # Offline data folder        
         offline_folder = None
+        # Number of episodes
+        episode_num = args['episode_num']  
+
+    # Input parameters
 
     if args['input_user_num'] is None:
         input_user_num = user_num
     else:
         input_user_num = args['input_user_num']
+
     if args['input_tx_power'] is None:
         input_tx_power = tx_power
     else:
         input_tx_power = args['input_tx_power']
+
     if args['input_reward_penalty'] is None:
         input_reward_penalty = reward_penalty
     else:
         input_reward_penalty = args['input_reward_penalty']
+
     if args['input_reward_alpha'] is None:
         input_reward_alpha = reward_alpha
     else:
@@ -87,6 +104,7 @@ def get_input(args: []):
             raise ValueError
         else:
             input_reward_alpha = [args['input_reward_alpha']]
+
     if args['input_episode_num'] is None:
         input_episode_num = episode_num
     else:
@@ -116,10 +134,6 @@ def get_input(args: []):
             input_additional_delay = False
         else:
             raise ValueError
-
-    plot_format = args['format']
-
-    mode = args['mode']
 
     return algorithm_training, algorithm_testing, agent_policy, running, offline_folder, transfer, \
            user_num, tx_power, reward_penalty, reward_alpha, episode_num, step_num, ideal_update, additional_delay, offline_running, \
@@ -155,6 +169,8 @@ def initialize_simulation(mode: str,
                           action_labels: [str],
                           action_penalties: [float]
                           ):
+
+    # Determine input and output folders
 
     if offline_running and agent_policy == 'dql':
         offline_flag = '_offline'
@@ -227,32 +243,27 @@ def initialize_simulation(mode: str,
             if not os.path.exists(user_folder):
                 os.makedirs(user_folder)
 
-    sim_duration = 5 + step_num * step_duration / 1000  # Duration of the simulation [s]
+    # Duration of the simulation [s]
+    sim_duration = 5 + step_num * step_duration / 1000 
+    simulation_time = 0
 
-    default_action_index = None  # Index of the action chosen by the static strategy
-
+    # Index of the action chosen by the static strategy
+    default_action_index = None  
     if agent_policy != 'dql' and agent_policy != 'random' and not offline_running:
         default_action_index = action_labels.index(int(agent_policy))
 
-    max_penalty = reward_penalty + np.max(action_penalties)  # Penalty given by not addressing the QoS requirements
-    simulation_time = 0
+    # Penalty given by not addressing the QoS requirements
+    max_penalty = reward_penalty + np.max(action_penalties)  
+    agent.max_penalty = max_penalty
+
+    # Temperature for the agent training
     temperatures = get_temperature(episode_num)
     temp = 0
-
-    agent.max_penalty = max_penalty
 
     return data_folder, sim_duration, default_action_index, max_penalty, simulation_time, temperatures, temp
 
 
 def get_temperature(episode_num: int):
-    # st = 0.95
-    # a = int(episode_num / 10)
-    # b = episode_num + a
-    #
-    # temperatures = (np.flip(np.arange(a, b))) / (b + b * (1 - st ** 2) / (st ** 2))
-    # temperatures[:int(episode_num / 3)] **= 0.5
-    # temperatures[int(episode_num / 3):int(2 * episode_num / 3)] **= 0.75
-    # temperatures[int(2 * episode_num / 3):] **= 1
 
     temperatures = np.flip(np.arange(.1, 1, .9 / episode_num))
 

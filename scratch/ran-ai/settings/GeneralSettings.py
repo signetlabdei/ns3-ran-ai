@@ -29,7 +29,7 @@ memblock_key = 2333  # memory block key, need to keep the same in the ns-3 scrip
 
 step_duration = 100  # Duration of a step [ms]
 teleoperated_prr_requirement = .99
-teleoperated_delay_requirement = 50000000  # [ns]  for tele-operated driving applications
+teleoperated_delay_requirement = 50000000  # [ns] 
 mapsharing_prr_requirement = .99
 mapsharing_delay_requirement = 100000000  # [ns]
 

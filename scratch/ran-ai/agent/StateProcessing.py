@@ -15,6 +15,8 @@ def state_process(step_data_per_user,
 
     imsi_list = []
 
+    # Repeat for each user in the scenario
+
     for user_idx in range(user_num):
 
         step_data = step_data_per_user[user_idx]
@@ -25,6 +27,8 @@ def state_process(step_data_per_user,
         else:
 
             imsi_list.append(step_data['IMSI'])
+
+        # Add to the state the different features
 
         for state_idx, label in enumerate(features):
 
@@ -37,6 +41,8 @@ def state_process(step_data_per_user,
             feature = (feature - min_value) / (max_value - min_value)
 
             states[user_idx][state_idx] = feature
+
+        # Add to the state the PRR values
 
         for state_idx, comb_features in enumerate(combination_features):
 

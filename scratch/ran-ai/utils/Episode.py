@@ -16,10 +16,14 @@ def initialize_online_episode(episode: int,
 
     episode_start_time = time.time()
 
+    # Periodically save the episode date
+
     if episode > 0 and episode % int(episode_num / 10) == 0:
         agent.save_data(data_folder)
         agent.save_model(data_folder)
         agent.plot_data(data_folder, episode_num)
+
+    # Get the temperature of the episode
 
     if algorithm_training:
         temp = temperatures[episode]
@@ -28,8 +32,8 @@ def initialize_online_episode(episode: int,
 
     exp.reset()  # Reset the environment
     rl = Ns3AIRL(memblock_key, Env, Act)  # Link the shared memory block with ns-3 script
-    ns3Settings['firstVehicleIndex'] = np.random.randint(1, 51)
-    ns3Settings['RngRun'] = np.random.randint(1, 10)
+    ns3Settings['firstVehicleIndex'] = np.random.randint(1, 51)  # Randomly set the first vehicle
+    ns3Settings['RngRun'] = np.random.randint(1, 10)  # Randomly set the simulation seed
     pro = exp.run(setting=ns3Settings, show_output=True)  # Set and run the ns-3 script (sim.cc)
 
     return temp, episode_start_time, rl, pro
@@ -41,6 +45,8 @@ def initialize_offline_episode(episode: int,
                                data_folder: str):
 
     episode_start_time = time.time()
+
+    # Periodically save the episode date
 
     if episode_num > 10 and episode > 0 and episode % int(episode_num / 10) == 0:
         agent.save_data(data_folder)
